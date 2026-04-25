@@ -1,0 +1,104 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.serve
+    image: neorec-serve:latest
+    container_name: neorec-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+      - NEOREC_MODEL_DIR=/app/artifacts
+    volumes:
+      - ../artifacts:/app/artifacts:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks: [neorec]
+
+  redis:
+    image: redis:7-alpine
+    container_name: neorec-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    networks: [neorec]
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.serve
+    image: neorec-serve:latest
+    container_name: neorec-dashboard
+    command:
+      - streamlit
+      - run
+      - src/neorec/serving/dashboard.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+    ports:
+      - "8501:8501"
+    environment:
+      - API_URL=http://api:8000
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks: [neorec]
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.13.0
+    container_name: neorec-mlflow
+    command:
+      - mlflow
+      - server
+      - --host=0.0.0.0
+      - --port=5000
+      - --backend-store-uri=sqlite:///mlflow/mlflow.db
+      - --default-artifact-root=/mlflow/artifacts
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow-data:/mlflow
+    restart: unless-stopped
+    networks: [neorec]
+
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: neorec-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    networks: [neorec]
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: neorec-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks: [neorec]
+
+volumes:
+  redis-data:
+  mlflow-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  neorec:
+    driver: bridge

@@ -1,0 +1,16 @@
+# @package recall
+name: cold_start
+type: content_based
+
+model:
+  features: [genres, year_bucket]
+  similarity: cosine              # {cosine, jaccard}
+  tfidf_on_genres: true
+
+output:
+  top_k: 200
+  fallback_to_popularity: true    # if user has no signal at all
+
+eval:
+  k_list: [10, 50, 100, 200]
+  cold_user_max_interactions: 5   # define "cold" as <= 5 interactions

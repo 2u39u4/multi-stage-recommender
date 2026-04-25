@@ -1,0 +1,28 @@
+# @package rank
+name: transformer_ctr
+stage: fine_rank
+
+model:
+  embedding_dim: 32
+  num_blocks: 2
+  num_heads: 4
+  ffn_hidden: 128
+  dropout: 0.2
+  seq_max_len: 50
+  target_attention: true          # BST-style: target item as query
+
+train:
+  epochs: 10
+  batch_size: 1024
+  lr: 5e-4
+  weight_decay: 0.0
+  loss: binary_crossentropy
+  optimizer: adamw
+  warmup_steps: 1000
+  early_stopping_patience: 3
+
+input:
+  top_k_from_prerank: 100
+
+output:
+  top_k_after_rank: 20

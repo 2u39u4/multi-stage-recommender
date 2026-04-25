@@ -1,0 +1,45 @@
+# ================================================================
+# NeoRec — global configuration (Hydra root)
+# ================================================================
+# Override any field from the CLI, e.g.:
+#   python -m neorec.cli train recall=sasrec recall.model.hidden_dim=128
+# ================================================================
+
+defaults:
+  - data: movielens_1m
+  - recall: als
+  - rank: deepfm
+  - rerank: mmr
+  - serving: default
+  - _self_
+
+project_name: neorec
+seed: 42
+
+paths:
+  root:        ${oc.env:PROJECT_ROOT, ${hydra:runtime.cwd}}
+  data_raw:        ${paths.root}/data/raw
+  data_processed:  ${paths.root}/data/processed
+  embeddings:      ${paths.root}/data/embeddings
+  artifacts:       ${paths.root}/artifacts
+  logs:            ${paths.root}/logs
+
+mlflow:
+  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI, file:./mlruns}
+  experiment_name: ${project_name}
+  run_name: null        # default: auto-generated from config
+  tags:
+    stage: ???          # overridden by each command
+
+logging:
+  level: INFO
+  format: "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+
+hydra:
+  run:
+    dir: outputs/${now:%Y-%m-%d}/${now:%H-%M-%S}
+  sweep:
+    dir: multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false

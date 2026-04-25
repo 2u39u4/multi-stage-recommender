@@ -1,0 +1,21 @@
+# @package rerank
+name: mmr
+strategy: mmr                     # {mmr, debias, rules, composite}
+
+mmr:
+  lambda: 0.5                     # 1.0 = pure relevance, 0.0 = pure diversity
+  similarity: cosine              # over item embeddings
+
+debias:
+  enabled: true
+  method: ips                     # {ips, snips, none}
+  clip_min: 0.01
+  clip_max: 10.0
+
+rules:
+  filter_already_watched: true
+  max_per_genre_ratio: 0.5
+  max_per_year_bucket: 3
+
+output:
+  top_k_final: 10

@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+# -------------------------------------------------------------
+# Training image — heavier, carries all training dependencies.
+# Use: docker build -f docker/Dockerfile.train -t neorec-train .
+# -------------------------------------------------------------
+FROM python:3.10-slim AS base
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        git \
+        curl \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pyproject.toml requirements.txt ./
+RUN pip install --upgrade pip && pip install -r requirements.txt
+
+COPY src ./src
+COPY configs ./configs
+RUN pip install -e .
+
+CMD ["python", "-m", "neorec.cli", "--help"]

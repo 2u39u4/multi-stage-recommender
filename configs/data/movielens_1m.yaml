@@ -1,0 +1,28 @@
+# @package data
+name: movielens_1m
+size: "1m"
+url: "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
+
+split:
+  strategy: leave_one_out       # {leave_one_out, time_based}
+  valid_ratio: 0.1              # only for time_based
+  test_ratio: 0.1               # only for time_based
+  min_interactions_per_user: 5  # drop very cold users from training
+
+feedback:
+  type: implicit                # treat rating >= threshold as positive
+  rating_threshold: 4.0
+
+negatives:
+  train_ratio: 4                # 1 pos : 4 random negatives for ranking
+  eval_sample: 99               # 99 negatives + 1 positive for evaluation
+
+features:
+  user_cols: [user_id, age_bucket, gender, occupation]
+  item_cols: [item_id, genres, year_bucket]
+  sequence:
+    max_len: 50
+    padding_value: 0
+
+max_user_id: null                # filled in after preprocessing
+max_item_id: null

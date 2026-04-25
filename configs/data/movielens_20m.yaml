@@ -1,0 +1,28 @@
+# @package data
+name: movielens_20m
+size: "20m"
+url: "https://files.grouplens.org/datasets/movielens/ml-20m.zip"
+
+split:
+  strategy: leave_one_out
+  valid_ratio: 0.1
+  test_ratio: 0.1
+  min_interactions_per_user: 5
+
+feedback:
+  type: implicit
+  rating_threshold: 4.0
+
+negatives:
+  train_ratio: 4
+  eval_sample: 99
+
+features:
+  user_cols: [user_id]
+  item_cols: [item_id, genres]
+  sequence:
+    max_len: 50
+    padding_value: 0
+
+max_user_id: null
+max_item_id: null

@@ -1,0 +1,21 @@
+cff-version: 1.2.0
+message: "If you use this work, please cite it as below."
+title: "NeoRec: A Production-Grade Multi-Stage Recommender System"
+abstract: >
+  An end-to-end, reproducible, industrial-style recommendation pipeline on
+  MovieLens with multi-channel recall, DeepFM pre-ranking, DIN fine-ranking,
+  MMR re-ranking, and a containerized FastAPI + Streamlit deployment.
+type: software
+authors:
+  - family-names: "Your Last Name"
+    given-names: "Your First Name"
+    email: "you@example.com"
+repository-code: "https://github.com/your-handle/neorec"
+license: MIT
+version: "0.1.0"
+date-released: "2026-04-22"
+keywords:
+  - recommender-system
+  - deep-learning
+  - information-retrieval
+  - mlops

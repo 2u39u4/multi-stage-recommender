@@ -1,0 +1,36 @@
+# @package serving
+name: default
+
+api:
+  host: 0.0.0.0
+  port: 8000
+  workers: 1
+  reload: false
+  cors_origins: ["*"]
+  request_timeout_s: 5
+
+cache:
+  backend: redis
+  host: ${oc.env:REDIS_HOST, localhost}
+  port: ${oc.env:REDIS_PORT, 6379}
+  db: 0
+  ttl_seconds: 300
+  namespace: neorec
+
+index:
+  type: hnsw
+  path: ${paths.artifacts}/faiss_hnsw.index
+  user_emb_path: ${paths.embeddings}/user_emb.npy
+  item_emb_path: ${paths.embeddings}/item_emb.npy
+
+models:
+  deepfm_path: ${paths.artifacts}/deepfm.pt
+  din_path:    ${paths.artifacts}/din.pt
+
+observability:
+  prometheus_enabled: true
+  histogram_buckets: [1, 5, 10, 25, 50, 100, 250, 500, 1000]  # ms
+
+dashboard:
+  api_url: ${oc.env:API_URL, http://localhost:8000}
+  mlflow_url: ${oc.env:MLFLOW_TRACKING_URI, http://localhost:5000}

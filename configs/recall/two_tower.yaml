@@ -1,0 +1,34 @@
+# @package recall
+name: two_tower
+type: deep_retrieval
+
+model:
+  architecture: dssm              # {dssm, youtube_dnn}
+  embedding_dim: 64
+  user_tower_hidden: [128, 64]
+  item_tower_hidden: [128, 64]
+  activation: relu
+  dropout: 0.2
+  l2_reg: 1e-6
+  temperature: 0.05               # for sampled-softmax loss
+  use_batch_norm: true
+
+train:
+  epochs: 20
+  batch_size: 1024
+  lr: 1e-3
+  weight_decay: 1e-6
+  negative_sampling: in_batch     # {in_batch, uniform, popularity, hard}
+  num_negatives: 4
+  early_stopping_patience: 3
+
+output:
+  top_k: 500
+  index:
+    type: hnsw                    # {flat, ivf, hnsw}
+    hnsw_m: 32
+    ef_construction: 200
+    ef_search: 64
+
+eval:
+  k_list: [10, 50, 100, 200]

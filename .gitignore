@@ -1,0 +1,83 @@
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.egg-info/
+*.egg
+build/
+dist/
+wheels/
+.eggs/
+.installed.cfg
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ---------- Virtual envs ----------
+.venv/
+venv/
+env/
+.env
+.envrc
+
+# ---------- IDEs ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ---------- Testing / coverage ----------
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.mypy_cache/
+.ruff_cache/
+.tox/
+
+# ---------- Jupyter ----------
+.ipynb_checkpoints/
+*.ipynb_meta
+
+# ---------- Data & models ----------
+data/raw/*
+data/processed/*
+data/embeddings/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/embeddings/.gitkeep
+
+# Large artefacts
+*.npy
+*.npz
+*.pkl
+*.pt
+*.pth
+*.bin
+*.onnx
+*.index
+*.faiss
+*.h5
+
+# ---------- Experiment tracking ----------
+mlruns/
+mlflow-artifacts/
+wandb/
+outputs/            # Hydra default output dir
+multirun/
+lightning_logs/
+
+# ---------- Docker ----------
+.docker/
+docker-data/
+
+# ---------- OS / misc ----------
+*.log
+logs/
+tmp/
+.tmp/
+.cache/

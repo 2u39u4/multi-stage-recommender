@@ -1,0 +1,18 @@
+# @package recall
+name: merge
+type: fusion
+
+strategy: rrf                     # {norm_weighted, rrf, learned}
+
+channels:
+  als:        { weight: 1.0, enabled: true }
+  two_tower:  { weight: 1.0, enabled: true }
+  sasrec:     { weight: 1.0, enabled: true }
+  popularity: { weight: 0.5, enabled: true }
+  cold_start: { weight: 1.0, enabled: true }
+
+rrf:
+  k: 60                           # smoothing constant in 1/(k+rank)
+
+output:
+  candidate_pool_size: 1000

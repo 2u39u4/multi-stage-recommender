@@ -1,0 +1,28 @@
+# @package recall
+name: sasrec
+type: sequential
+
+model:
+  embedding_dim: 64
+  max_seq_len: 50
+  num_blocks: 2
+  num_heads: 2
+  hidden_dim: 64
+  dropout: 0.2
+  layer_norm_eps: 1e-12
+
+train:
+  epochs: 100
+  batch_size: 256
+  lr: 1e-3
+  weight_decay: 0.0
+  loss: sampled_softmax           # {full_softmax, sampled_softmax, bpr}
+  num_negatives: 100
+  early_stopping_patience: 10
+  grad_clip: 5.0
+
+output:
+  top_k: 300
+
+eval:
+  k_list: [10, 50, 100, 200]

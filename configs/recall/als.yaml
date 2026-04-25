@@ -1,0 +1,19 @@
+# @package recall
+name: als
+type: matrix_factorization
+
+model:
+  factors: 64
+  regularization: 0.01
+  alpha: 40.0            # confidence weight for implicit feedback
+  iterations: 20
+  use_gpu: false
+  random_state: ${seed}
+
+output:
+  top_k: 300             # candidates returned per user
+  save_user_factors: true
+  save_item_factors: true
+
+eval:
+  k_list: [10, 50, 100, 200]
