@@ -24,19 +24,23 @@
 - **Research flavor**: cold-start strategy, long-tail debias re-ranking, attention visualization for DIN, counterfactual offline evaluation simulating A/B tests.
 - **Code quality**: 80%+ test coverage, ruff + mypy + pre-commit hooks, GitHub Actions CI.
 
-> **Best end-to-end results on MovieLens-1M (test set, leave-one-out, K=10):**
+> **Planned end-to-end evaluation on MovieLens-1M (test set, leave-one-out, K=10).**
+> The result tables below are populated incrementally as each model is trained
+> and logged to MLflow. Numbers labelled `pending` have not been measured yet.
 >
-> | Stage | Model | Recall@10 | NDCG@10 | HitRate@10 | p99 Latency |
+> | Stage | Model | Recall@10 | NDCG@10 | HitRate@10 | Coverage@10 |
 > |---|---|---|---|---|---|
-> | Recall (single) | ALS | 0.142 | 0.082 | 0.214 | — |
-> | Recall (single) | Two-Tower DSSM | 0.171 | 0.099 | 0.256 | — |
-> | Recall (single) | SASRec | **0.198** | **0.118** | **0.291** | — |
-> | Recall (fused) | Multi-channel | 0.226 | 0.131 | 0.334 | — |
-> | Pre-Rank | DeepFM | — | — | — | 4 ms |
-> | Fine-Rank | DIN | — | — | — | 11 ms |
-> | **End-to-end** | **Full pipeline** | **0.241** | **0.149** | **0.358** | **27 ms** |
+> | Recall (single) | iALS (k=64, α=40, 20 iter) | **0.0573** | **0.0274** | **0.0573** | 0.5627 |
+> | Recall (single) | Two-Tower DSSM | pending | pending | pending | pending |
+> | Recall (single) | SASRec | pending | pending | pending | pending |
+> | Recall (fused) | Multi-channel | pending | pending | pending | pending |
+> | Pre-Rank | DeepFM | pending | pending | pending | — |
+> | Fine-Rank | DIN | pending | pending | pending | — |
+> | **End-to-end** | **Full pipeline** | **pending** | **pending** | **pending** | **pending** |
 
-*(numbers above are placeholders to be filled after running the full benchmark — see `experiments/results/` for the live versions and significance tests.)*
+ALS row reproduced 2026-04-25 in 2.09 s on a single thread; full breakdown in
+[`experiments/results/recall_als.md`](experiments/results/recall_als.md) and
+the MLflow UI (`make mlflow-ui`).
 
 ---
 
