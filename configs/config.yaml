@@ -17,7 +17,7 @@ project_name: neorec
 seed: 42
 
 paths:
-  root:        ${oc.env:PROJECT_ROOT, ${hydra:runtime.cwd}}
+  root:            ${oc.env:PROJECT_ROOT,${oc.env:PWD,.}}
   data_raw:        ${paths.root}/data/raw
   data_processed:  ${paths.root}/data/processed
   embeddings:      ${paths.root}/data/embeddings
@@ -25,11 +25,10 @@ paths:
   logs:            ${paths.root}/logs
 
 mlflow:
-  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI, file:./mlruns}
+  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI,file:./mlruns}
   experiment_name: ${project_name}
   run_name: null        # default: auto-generated from config
-  tags:
-    stage: ???          # overridden by each command
+  tags: {}              # extended at runtime by each command
 
 logging:
   level: INFO

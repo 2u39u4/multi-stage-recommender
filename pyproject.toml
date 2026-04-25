@@ -29,7 +29,7 @@ classifiers = [
 
 dependencies = [
     "torch>=2.2,<3",
-    "numpy>=1.26,<2",
+    "numpy>=1.26",
     "pandas>=2.2",
     "pyarrow>=15",
     "scikit-learn>=1.4",

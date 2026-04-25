@@ -70,6 +70,7 @@ wandb/
 outputs/            # Hydra default output dir
 multirun/
 lightning_logs/
+artifacts/          # trained model artefacts (large)
 
 # ---------- Docker ----------
 .docker/
