@@ -28,19 +28,20 @@
 > The result tables below are populated incrementally as each model is trained
 > and logged to MLflow. Numbers labelled `pending` have not been measured yet.
 >
-> | Stage | Model | Recall@10 | NDCG@10 | HitRate@10 | Coverage@10 |
-> |---|---|---|---|---|---|
-> | Recall (single) | iALS (k=64, α=40, 20 iter) | **0.0573** | **0.0274** | **0.0573** | 0.5627 |
-> | Recall (single) | Two-Tower DSSM | pending | pending | pending | pending |
-> | Recall (single) | SASRec | pending | pending | pending | pending |
-> | Recall (fused) | Multi-channel | pending | pending | pending | pending |
-> | Pre-Rank | DeepFM | pending | pending | pending | — |
-> | Fine-Rank | DIN | pending | pending | pending | — |
-> | **End-to-end** | **Full pipeline** | **pending** | **pending** | **pending** | **pending** |
+> | Stage | Model | Recall@10 | NDCG@10 | MRR@10 | Coverage@10 | Δ vs iALS |
+> |---|---|---|---|---|---|---|
+> | Recall (single) | Popularity | 0.0399 | 0.0188 | 0.0126 | 0.033 | −30 % |
+> | Recall (single) | iALS (k=64, α=40, 20 iter) | 0.0573 | 0.0274 | 0.0184 | 0.563 | (baseline) |
+> | Recall (single) | **Two-Tower (BPR, 80 ep)** | **0.0590** | **0.0286** | **0.0195** | 0.559 | **+2.9 % / +4.5 % / +6.2 %** |
+> | Recall (single) | SASRec | pending | pending | pending | pending | pending |
+> | Recall (fused) | Multi-channel (RRF) | pending | pending | pending | pending | pending |
+> | Pre-Rank | DeepFM | pending | pending | pending | — | pending |
+> | Fine-Rank | DIN | pending | pending | pending | — | pending |
+> | **End-to-end** | **Full pipeline** | **pending** | **pending** | **pending** | **pending** | **pending** |
 
-ALS row reproduced 2026-04-25 in 2.09 s on a single thread; full breakdown in
-[`experiments/results/recall_als.md`](experiments/results/recall_als.md) and
-the MLflow UI (`make mlflow-ui`).
+Each row links to a per-model report under
+[`experiments/results/`](experiments/results) — params, MLflow run id, and
+reproduction commands. Live numbers in MLflow (`make mlflow-ui`).
 
 ---
 

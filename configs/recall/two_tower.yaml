@@ -5,22 +5,23 @@ type: deep_retrieval
 model:
   architecture: dssm              # {dssm, youtube_dnn}
   embedding_dim: 64
-  user_tower_hidden: [128, 64]
-  item_tower_hidden: [128, 64]
+  user_tower_hidden: []           # [] = pure bilinear MF on (user_id ⊕ seq_mean)
+  item_tower_hidden: []           # add e.g. [128, 64] to enable a deep tower
   activation: relu
-  dropout: 0.2
+  dropout: 0.0
   l2_reg: 1e-6
-  temperature: 0.05               # for sampled-softmax loss
-  use_batch_norm: true
+  temperature: 1.0                # kept for forward-compat (BPR loss ignores it)
+  normalize: false                # L2-norm towers (off → magnitude is free)
+  device: cpu                     # {auto, cpu, cuda, mps} — CPU is faster for ML-1M scale
 
 train:
-  epochs: 20
-  batch_size: 1024
+  epochs: 80
+  batch_size: 2048
   lr: 1e-3
-  weight_decay: 1e-6
-  negative_sampling: in_batch     # {in_batch, uniform, popularity, hard}
-  num_negatives: 4
-  early_stopping_patience: 3
+  weight_decay: 1e-5
+  negative_sampling: bpr_uniform  # {bpr_uniform, in_batch, popularity, hard}
+  num_negatives: 1                # BPR uses exactly 1 negative per positive
+  early_stopping_patience: 5
 
 output:
   top_k: 500
