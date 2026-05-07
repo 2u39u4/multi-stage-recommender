@@ -82,3 +82,7 @@ logs/
 tmp/
 .tmp/
 .cache/
+
+# ---------- Internal docs (kept local, not pushed) ----------
+docs/
+
