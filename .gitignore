@@ -67,10 +67,12 @@ data/embeddings/*
 mlruns/
 mlflow-artifacts/
 wandb/
-outputs/            # Hydra default output dir
+# Hydra default output dir
+outputs/
 multirun/
 lightning_logs/
-artifacts/          # trained model artefacts (large)
+# trained model artefacts (large)
+artifacts/
 
 # ---------- Docker ----------
 .docker/
@@ -83,6 +85,7 @@ tmp/
 .tmp/
 .cache/
 
-# ---------- Internal docs (kept local, not pushed) ----------
+# ---------- Internal planning / docs (kept local, not pushed) ----------
 docs/
+EXECUTION_PLAN.md
 
