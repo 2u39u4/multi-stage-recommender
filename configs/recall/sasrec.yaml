@@ -7,19 +7,20 @@ model:
   max_seq_len: 50
   num_blocks: 2
   num_heads: 2
-  hidden_dim: 64
   dropout: 0.2
   layer_norm_eps: 1e-12
+  device: cpu                     # {auto, cpu, cuda, mps}
 
 train:
-  epochs: 100
-  batch_size: 256
+  epochs: 50
+  batch_size: 128
   lr: 1e-3
   weight_decay: 0.0
-  loss: sampled_softmax           # {full_softmax, sampled_softmax, bpr}
-  num_negatives: 100
-  early_stopping_patience: 10
+  loss: bpr_per_position          # {bpr_per_position, sampled_softmax} (only bpr_per_position implemented)
+  num_negatives: 1
   grad_clip: 5.0
+  early_stopping_patience: 10     # reserved for future use
+  inference_batch_size: 512
 
 output:
   top_k: 300
