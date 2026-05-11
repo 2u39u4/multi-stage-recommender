@@ -2,17 +2,27 @@
 name: merge
 type: fusion
 
-strategy: rrf                     # {norm_weighted, rrf, learned}
+strategy: rrf                     # {rrf, norm_weighted, learned}
 
+# Each channel's `enabled` toggle is honoured at fit() time.
+# `weight` is used only by `norm_weighted` (RRF is score-free, ignores weight).
 channels:
   als:        { weight: 1.0, enabled: true }
   two_tower:  { weight: 1.0, enabled: true }
   sasrec:     { weight: 1.0, enabled: true }
   popularity: { weight: 0.5, enabled: true }
-  cold_start: { weight: 1.0, enabled: true }
+  cold_start: { weight: 0.5, enabled: true }
 
 rrf:
-  k: 60                           # smoothing constant in 1/(k+rank)
+  k: 60                           # smoothing constant in 1/(k + rank)
 
 output:
-  candidate_pool_size: 1000
+  per_channel_depth: 500          # how deep to pull from each base channel
+  candidate_pool_size: 1000       # merged pool size before truncating to top-K
+
+# `model` block kept (empty placeholder) so train.py's params-flattening
+# logic doesn't choke; merge has no learnable model.
+model: {}
+
+eval:
+  k_list: [10, 50, 100, 200]

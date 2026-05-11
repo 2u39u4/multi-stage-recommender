@@ -24,17 +24,19 @@
 - **Research flavor**: cold-start strategy, long-tail debias re-ranking, attention visualization for DIN, counterfactual offline evaluation simulating A/B tests.
 - **Code quality**: 80%+ test coverage, ruff + mypy + pre-commit hooks, GitHub Actions CI.
 
-> **Planned end-to-end evaluation on MovieLens-1M (test set, leave-one-out, K=10).**
+> **End-to-end evaluation on MovieLens-1M (test set, leave-one-out, K=10, full-rank protocol over 3 533 items).**
 > The result tables below are populated incrementally as each model is trained
 > and logged to MLflow. Numbers labelled `pending` have not been measured yet.
 >
 > | Stage | Model | Recall@10 | NDCG@10 | MRR@10 | Coverage@10 | Δ vs iALS |
 > |---|---|---|---|---|---|---|
 > | Recall (single) | Popularity | 0.0399 | 0.0188 | 0.0126 | 0.033 | −30 % |
+> | Recall (single) | Cold-start (TF-IDF on genres) | 0.0167 | 0.0083 | 0.0057 | **0.874** | −71 % |
 > | Recall (single) | iALS (k=64, α=40, 20 iter) | 0.0573 | 0.0274 | 0.0184 | 0.563 | (baseline) |
-> | Recall (single) | **Two-Tower (BPR, 80 ep)** | **0.0590** | **0.0286** | **0.0195** | 0.559 | **+2.9 % / +4.5 % / +6.2 %** |
-> | Recall (single) | SASRec | pending | pending | pending | pending | pending |
-> | Recall (fused) | Multi-channel (RRF) | pending | pending | pending | pending | pending |
+> | Recall (single) | Two-Tower (BPR, 80 ep) | 0.0590 | 0.0286 | 0.0195 | 0.559 | +2.9 % / +4.5 % / +6.2 % |
+> | Recall (single) | SASRec (2 blocks, 50 ep) | 0.0570 | 0.0284 | 0.0198 | 0.674 | −0.5 % / +3.6 % / +7.6 % |
+> | **Recall (fused)** | **Multi-channel (RRF, 5 ch)** | **0.0794** | **0.0381** | **0.0257** | 0.433 | **+38.6 % / +39.1 % / +39.7 %** |
+> | **Recall (fused)** | **Multi-channel (norm_weighted, 5 ch)** | **0.0827** | **0.0397** | **0.0267** | 0.486 | **+44.3 % / +44.9 % / +45.1 %** |
 > | Pre-Rank | DeepFM | pending | pending | pending | — | pending |
 > | Fine-Rank | DIN | pending | pending | pending | — | pending |
 > | **End-to-end** | **Full pipeline** | **pending** | **pending** | **pending** | **pending** | **pending** |
@@ -231,15 +233,21 @@ mining (SASRec ablation).
 > All numbers are produced by `make benchmark` and logged to MLflow.
 > Plots and significance tests live in `experiments/results/`.
 
-### 7.1 Recall stage (MovieLens-1M, leave-one-out, K=200)
+### 7.1 Recall stage (MovieLens-1M, leave-one-out, K=200, full-rank)
 
-| Model | Recall@200 | NDCG@200 | MRR | Coverage |
+| Model | Recall@200 | NDCG@200 | MRR@200 | Coverage@200 |
 |---|---|---|---|---|
-| Popularity | TBD | TBD | TBD | low |
-| iALS | TBD | TBD | TBD | mid |
-| DSSM | TBD | TBD | TBD | mid |
-| SASRec | TBD | TBD | TBD | high |
-| **Multi-channel (RRF)** | **TBD** | **TBD** | **TBD** | **high** |
+| Popularity                            | 0.3543     | 0.0722   | 0.0190  | 0.213        |
+| Cold-start                            | 0.1848     | 0.0362   | 0.0089  | **0.997**    |
+| iALS                                  | 0.4997     | 0.1025   | 0.0274  | 0.824        |
+| Two-Tower                             | 0.4914     | 0.1027   | 0.0287  | 0.945        |
+| SASRec                                | 0.3305     | 0.0764   | 0.0262  | 0.891        |
+| **Multi-channel (RRF, 5ch)**          | **0.5631** | **0.1230** | 0.0370 | 0.987        |
+| **Multi-channel (norm_weighted, 5ch)** | **0.5747** | **0.1258** | 0.0380 | 0.867       |
+
+> Per-model details (params, MLflow run id, repro commands): see
+> [`experiments/results/recall_*.md`](experiments/results).
+> Channel comparison plots: [`notebooks/02_recall_analysis.ipynb`](notebooks/02_recall_analysis.ipynb).
 
 ### 7.2 End-to-end (recall → rank → rerank, K=10)
 

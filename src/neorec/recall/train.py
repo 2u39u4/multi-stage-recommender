@@ -34,6 +34,7 @@ _REGISTRY: dict[str, str] = {
     "sasrec":     "neorec.recall.sasrec:SASRecRecaller",
     "popularity": "neorec.recall.popularity:PopularityRecaller",
     "cold_start": "neorec.recall.cold_start:ColdStartRecaller",
+    "merge":      "neorec.recall.merge:MergeRecaller",
 }
 
 
@@ -126,15 +127,21 @@ def run(cfg: DictConfig) -> dict[str, float]:
     artefacts_dir = ensure_dir(Path(cfg.paths.artifacts) / "recall" / name)
     recaller.save(artefacts_dir)
 
-    flat_params = {
+    flat_params: dict[str, object] = {
         "channel":          name,
         "dataset":          str(cfg.data.name),
         "split_strategy":   str(cfg.data.split.strategy),
         "rating_threshold": float(cfg.data.feedback.rating_threshold),
-        **{f"model.{k}": v for k, v in OmegaConf.to_container(  # type: ignore[union-attr]
-            cfg.recall.model, resolve=True
-        ).items()},
     }
+    model_cfg = OmegaConf.to_container(cfg.recall.model, resolve=True)  # type: ignore[union-attr]
+    if isinstance(model_cfg, dict):
+        # MLflow requires param values to be str-coercible scalars; stringify
+        # nested containers (lists, dicts) so things like
+        # `features: [genres, year_bucket]` don't crash log_params.
+        for k, v in model_cfg.items():
+            flat_params[f"model.{k}"] = (
+                str(v) if isinstance(v, (list, tuple, dict)) else v
+            )
     # MLflow forbids '@' in metric names; convert e.g. recall@10 -> recall_at_10.
     mlflow_metrics = {k.replace("@", "_at_"): v for k, v in metrics.items()}
 
