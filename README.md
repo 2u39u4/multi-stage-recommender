@@ -24,22 +24,36 @@
 - **Research flavor**: cold-start strategy, long-tail debias re-ranking, attention visualization for DIN, counterfactual offline evaluation simulating A/B tests.
 - **Code quality**: 80%+ test coverage, ruff + mypy + pre-commit hooks, GitHub Actions CI.
 
-> **End-to-end evaluation on MovieLens-1M (test set, leave-one-out, K=10, full-rank protocol over 3 533 items).**
+> **End-to-end evaluation on MovieLens-1M** — leave-one-out per user; each user's
+> last interaction held out; metrics computed via **full-rank scoring over all
+> 3 533 unseen items** (no popularity sampling, no negative subsetting).
 > The result tables below are populated incrementally as each model is trained
 > and logged to MLflow. Numbers labelled `pending` have not been measured yet.
 >
-> | Stage | Model | Recall@10 | NDCG@10 | MRR@10 | Coverage@10 | Δ vs iALS |
+> | Stage | Model | Recall@10 | NDCG@10 | MRR@10 | Coverage@10 | Δ Recall@10 vs iALS |
 > |---|---|---|---|---|---|---|
-> | Recall (single) | Popularity | 0.0399 | 0.0188 | 0.0126 | 0.033 | −30 % |
-> | Recall (single) | Cold-start (TF-IDF on genres) | 0.0167 | 0.0083 | 0.0057 | **0.874** | −71 % |
+> | Recall (single) | Popularity | 0.0399 | 0.0188 | 0.0126 | 0.033 | −0.0174 (−30.4%) |
+> | Recall (single) | Cold-start (TF-IDF on genres) | 0.0167 | 0.0083 | 0.0057 | **0.874** | −0.0406 (−70.9%) |
 > | Recall (single) | iALS (k=64, α=40, 20 iter) | 0.0573 | 0.0274 | 0.0184 | 0.563 | (baseline) |
-> | Recall (single) | Two-Tower (BPR, 80 ep) | 0.0590 | 0.0286 | 0.0195 | 0.559 | +2.9 % / +4.5 % / +6.2 % |
-> | Recall (single) | SASRec (2 blocks, 50 ep) | 0.0570 | 0.0284 | 0.0198 | 0.674 | −0.5 % / +3.6 % / +7.6 % |
-> | **Recall (fused)** | **Multi-channel (RRF, 5 ch)** | **0.0794** | **0.0381** | **0.0257** | 0.433 | **+38.6 % / +39.1 % / +39.7 %** |
-> | **Recall (fused)** | **Multi-channel (norm_weighted, 5 ch)** | **0.0827** | **0.0397** | **0.0267** | 0.486 | **+44.3 % / +44.9 % / +45.1 %** |
+> | Recall (single) | Two-Tower (BPR, 80 ep) | 0.0590 | 0.0286 | 0.0195 | 0.559 | +0.0017 (+2.9%) |
+> | Recall (single) | SASRec (2 blocks, 50 ep) | 0.0570 | 0.0284 | 0.0198 | 0.674 | −0.0003 (−0.5%) |
+> | **Recall (fused)** | **Multi-channel (RRF, 5 ch)** | **0.0794** | **0.0381** | **0.0257** | 0.433 | **+0.0221 (+38.6%)** |
+> | **Recall (fused)** | **Multi-channel (norm_weighted, 5 ch)** | **0.0827** | **0.0397** | **0.0267** | 0.486 | **+0.0254 (+44.3%)** |
 > | Pre-Rank | DeepFM | pending | pending | pending | — | pending |
 > | Fine-Rank | DIN | pending | pending | pending | — | pending |
 > | **End-to-end** | **Full pipeline** | **pending** | **pending** | **pending** | **pending** | **pending** |
+
+> **Reading the table.** Recall@10 ≈ 0.06 reflects the strictness of full-rank
+> ranking on a small benchmark — a random recommender scores ~0.003 here, so
+> 0.06 is ~20× over random, in line with prior work on ML-1M.
+> The Δ column reports **absolute and relative** lift on Recall@10 against the
+> iALS baseline: large relative %s on this benchmark are partly a small-base
+> amplification effect, which is why the absolute change is shown alongside.
+> Multi-channel fusion's lift (+30–40%) is driven by channel diversity
+> (CF + sequential + content + popularity) and is consistent with the typical
+> magnitude reported for Reciprocal Rank Fusion in Cormack et al., SIGIR 2009;
+> we expect smaller relative gains on industrial-scale datasets where the
+> single-channel baseline is already much stronger.
 
 Each row links to a per-model report under
 [`experiments/results/`](experiments/results) — params, MLflow run id, and
@@ -248,6 +262,13 @@ mining (SASRec ablation).
 > Per-model details (params, MLflow run id, repro commands): see
 > [`experiments/results/recall_*.md`](experiments/results).
 > Channel comparison plots: [`notebooks/02_recall_analysis.ipynb`](notebooks/02_recall_analysis.ipynb).
+
+> **Fusion-gain attribution (drop-one ablation on RRF — full table in
+> [`experiments/results/recall_merge.md`](experiments/results/recall_merge.md)).**
+> Removing iALS / Two-Tower / SASRec costs Recall@10 −10.6% / −8.9% / −7.8%
+> respectively; removing the heuristic channels (popularity, cold-start) costs
+> only −0.8% / −1.8%. Each learned channel contributes a measurable, distinct
+> marginal — the fused gain is not driven by any single dominant retriever.
 
 ### 7.2 End-to-end (recall → rank → rerank, K=10)
 
