@@ -17,12 +17,17 @@
 
 ## 1. TL;DR — Highlights
 
-- **End-to-end industrial pipeline**: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN / Transformer fine-ranking, and rule + diversity re-ranking — mirrors real production stacks at FAANG / ByteDance / Meituan.
-- **Rigorous evaluation**: 11 models compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage; ablation studies on attention, sequence length, and recall channel mixing.
-- **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and a one-command Docker stack. Every number in the result tables is reproducible from `make all`.
-- **Online serving**: FastAPI + FAISS HNSW for sub-30ms p99 latency; Streamlit dashboard for interactive exploration; Prometheus metrics; load-tested at 500 QPS on a single CPU container.
-- **Research flavor**: cold-start strategy, long-tail debias re-ranking, attention visualization for DIN, counterfactual offline evaluation simulating A/B tests.
-- **Code quality**: 80%+ test coverage, ruff + mypy + pre-commit hooks, GitHub Actions CI.
+> **Project status:** recall stage **complete and benchmarked** (5 channels +
+> 2 fusion strategies, see §7.1). Pre-ranking, fine-ranking, re-ranking, and
+> online serving are scaffolded but in active development — rows marked
+> `pending` / `TBD` below will fill in as W3–W6 of the roadmap complete.
+
+- **End-to-end industrial pipeline** *(recall: implemented; pre-rank / fine-rank / re-rank: in development)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN / Transformer fine-ranking, and rule + diversity re-ranking — mirrors real production stacks at FAANG / ByteDance / Meituan.
+- **Rigorous evaluation**: 7 recall channels already compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); ranking-stage models and ablation studies on attention / sequence length / channel mixing scheduled for W3–W4.
+- **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and a one-command Docker stack. Every **measured** number is reproducible from the recorded MLflow run; `pending` rows fill in once their training job lands.
+- **Online serving** *(W5, planned)*: FastAPI + FAISS HNSW for vector retrieval; Streamlit dashboard for interactive exploration; Prometheus metrics. Latency target: sub-30 ms p99 on a single CPU container; numbers in §7.3 will be populated by `locust` once the API is wired up.
+- **Research flavor**: cold-start strategy (implemented, §7.1); long-tail debias re-ranking *(W4)*, attention visualization for DIN *(W3)*, counterfactual offline evaluation simulating A/B tests *(W4)*.
+- **Code quality**: ruff + mypy + pre-commit hooks, GitHub Actions CI, pytest suites for `data` / `eval` / `recall` already passing; ranking + serving suites grow in tandem with their modules.
 
 > **End-to-end evaluation on MovieLens-1M** — leave-one-out per user; each user's
 > last interaction held out; metrics computed via **full-rank scoring over all
@@ -203,11 +208,15 @@ neorec/
 | MovieLens-1M | 6 040 | 3 706 | 1 M | main experiments |
 | MovieLens-20M | 138 K | 27 K | 20 M | scaling study |
 
-**Splits**: leave-one-out per user (most common in the recsys literature) +
-time-based split (more realistic) — both are reported.
+**Splits**: leave-one-out per user — the default in the recsys literature —
+is reported throughout §7. A time-based 80 / 10 / 10 split is **implemented**
+in `data/preprocess.py` (set `data.split.strategy=time_based` to use it) and
+scheduled as a robustness ablation in W4; numbers will be added when run.
 
-**Negatives**: random + popularity-biased + in-batch (DSSM) + hard-negative
-mining (SASRec ablation).
+**Negatives**: BPR with uniform random negatives for Two-Tower / SASRec
+(deliberately chosen over in-batch sampled softmax after observing embedding
+collapse on this benchmark — see `experiments/results/recall_two_tower.md`);
+popularity-biased and hard-negative variants scheduled as W4 ablations.
 
 ### 5.1 Exploratory Data Analysis — what we learned *before* modelling
 
