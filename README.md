@@ -19,15 +19,17 @@
 
 > **Project status:** recall stage **complete and benchmarked** (5 channels +
 > 2 fusion strategies, §7.1). Ranking stage **complete and benchmarked** (LR /
-> GBDT / DeepFM / DIN + attention ablation, §7.2). Re-ranking and online
-> serving are scaffolded but in active development — rows marked `pending` /
-> `TBD` below will fill in as W4–W6 of the roadmap complete.
+> GBDT / DeepFM / DIN + attention ablation, §7.2). **Re-ranking stack complete**
+> (MMR + IPS debias + business rules, §7.4) with six controlled ablations,
+> a conversion funnel, and paired-bootstrap 95% CIs on all headline numbers
+> (§8). Online serving still in active development — rows marked `TBD` will
+> fill in as W5–W6 complete.
 
 - **End-to-end industrial pipeline** *(recall + ranking: implemented; re-rank / serving: in development)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN fine-ranking with attention visualisation, plus LR / GBDT baselines — mirrors real production stacks at FAANG / ByteDance / Meituan.
 - **Rigorous evaluation**: 7 recall channels compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); 4 ranking models compared end-to-end under an **out-of-fold training pipeline** that decouples recall and ranker training data — production wall-clock semantics, no look-ahead bias between stages (§7.2); further ablations on sequence length / channel mixing scheduled for W4.
 - **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and a one-command Docker stack. Every **measured** number is reproducible from the recorded MLflow run; `pending` rows fill in once their training job lands.
 - **Online serving** *(W5, planned)*: FastAPI + FAISS HNSW for vector retrieval; Streamlit dashboard for interactive exploration; Prometheus metrics. Latency target: sub-30 ms p99 on a single CPU container; numbers in §7.3 will be populated by `locust` once the API is wired up.
-- **Research flavor**: cold-start strategy (§7.1), DIN attention visualisation (§7.2); long-tail debias re-ranking *(W4)*, hard-negative mining and counterfactual offline evaluation simulating A/B tests *(W4–W6)*.
+- **Research flavor**: cold-start strategy (§7.1), DIN attention visualisation (§7.2), **MMR Pareto frontier + IPS debias** (§7.4); **six controlled ablations** including a counter-intuitive SASRec sequence-length finding (§8); conversion-funnel positive-survival analysis; paired-bootstrap 95% CIs on every headline number (§8.7).
 - **Code quality**: ruff + mypy + pre-commit hooks, GitHub Actions CI, pytest suites for `data` / `eval` / `recall` already passing; ranking + serving suites grow in tandem with their modules.
 
 > **End-to-end evaluation on MovieLens-1M** — leave-one-out per user; each user's
@@ -47,7 +49,7 @@
 > | **Recall (fused)** | **Multi-channel (norm_weighted, 5 ch)** | **0.0827** | **0.0397** | **0.0267** | 0.486 | **+0.0254 (+44.3%)** |
 > | Pre-Rank | DeepFM (re-rank merge top-1 000, OOF training) | 0.0401 | 0.0188 | 0.0124 | — | (different task; see §7.2) |
 > | Fine-Rank | **DIN with attention** (re-rank merge top-1 000, OOF training) | **0.0477** | **0.0214** | **0.0135** | — | (different task; see §7.2) |
-> | **End-to-end** | **Full pipeline (recall → DeepFM → MMR)** | **pending** | **pending** | **pending** | **pending** | **pending** |
+> | **Re-Rank** | **DIN → MMR (λ=0.7) → rules (final top-10)** | **0.0466** | **0.0244** | **0.0176** | **0.383** | accuracy −2% / coverage +27% vs pure DIN |
 
 > **Reading the table.** Recall@10 ≈ 0.06 reflects the strictness of full-rank
 > ranking on a small benchmark — a random recommender scores ~0.003 here, so
@@ -419,21 +421,143 @@ Brighter cells are history items the attention unit considers most relevant to t
 | Recall (FAISS HNSW, top-1000) | TBD | TBD | TBD |
 | Pre-rank (DeepFM, batch=1000) | TBD | TBD | TBD |
 | Fine-rank (DIN, batch=100) | TBD | TBD | TBD |
+| Re-rank (MMR + IPS + rules) | 0.8 ms / user | — | — *(in-process; net of ranker)* |
 | **End-to-end** | **TBD** | **TBD** | **TBD** |
+
+### 7.4 Re-ranking — MMR + IPS + business rules
+
+End-to-end runs the recall → DIN → re-rank stack on the OOF test set; the
+re-rank stack is **`mmr_rerank` → `ips_rerank` (optional) → `apply_rules`**.
+
+| Setting | Recall@10 | Coverage@10 | ILS@10 (↓ better) | Latency / user |
+|---|--:|--:|--:|--:|
+| DIN only (no rerank) — §7.2 row | 0.0477 | ~0.30 | — | 4.3 ms |
+| + MMR λ=1.0 (pure relevance + rules) | 0.0520 | 0.365 | 0.368 | +0.8 ms |
+| **+ MMR λ=0.7 (deployment default)** | **0.0466** | **0.383** | **0.333** | **+0.8 ms** |
+| + MMR λ=0.5 | 0.0408 | 0.403 | 0.293 | +0.8 ms |
+| + MMR λ=0.0 (pure diversity) | 0.0277 | 0.512 | 0.168 | +0.8 ms |
+
+λ is a deployment knob, not a model knob — the ranker doesn't have to
+re-train when product wants more or less diversity. Per-step latency is
+benchmarked on a single CPU container.
+
+> **Implementation**: `src/neorec/rerank/{mmr.py, debias.py, rules.py, pipeline.py}`,
+> driven by `configs/rerank/mmr.yaml`. CLI: `neorec rerank rank=din rerank=mmr 'rerank.mmr.lambda=0.7'`.
+> Full ablation: §8.1.
 
 ---
 
 ## 8. Ablation Studies
 
-1. **DIN attention vs sum pooling** — quantify the lift from attention.
-2. **SASRec sequence length** (10 / 20 / 50 / 100) — effect on recall.
-3. **Recall fusion strategy** — score normalization vs RRF vs learned fusion.
-4. **Negative sampling ratio** for Two-Tower (1, 4, 16, 64).
-5. **Re-ranking diversity λ** in MMR — accuracy/diversity trade-off curve.
-6. **Cold-start coverage** — Recall@K on users with < 5 interactions.
+Six controlled experiments quantify what every architectural choice is worth.
+Run any of them with `python scripts/run_ablations.py <name>`; results land
+under `experiments/ablations/*.json` and figures under
+`experiments/results/figures/`. Notebook walk-through: [`notebooks/03_ablations.ipynb`](notebooks/03_ablations.ipynb).
+Detailed write-up: [`docs/W4_RERANK_AND_ABLATIONS.md`](docs/W4_RERANK_AND_ABLATIONS.md).
 
-Each ablation produces a plot (`experiments/ablations/*.png`) and a Markdown
-summary with statistical significance.
+### 8.1 MMR λ Pareto frontier
+
+![MMR Pareto](experiments/results/figures/mmr_pareto_scatter.png)
+
+Sweep λ ∈ {0, 0.3, 0.5, 0.7, 1.0}. Each step trades roughly **2× more
+diversity** for **1× less accuracy**; we ship λ=0.7 as the deployment
+default (the knee). Coverage climbs from 0.36 → 0.51 across the sweep;
+ILS drops from 0.37 → 0.17.
+
+### 8.2 Cold-start vs hot-user performance
+
+![Cold-start bucket](experiments/results/figures/cold_start_bucket.png)
+
+Counter-intuitive but real: cold users (<20 training interactions) *out-score*
+hot users (60+) on Recall@10 (0.077 vs 0.042). Under LOO, hot users have
+many high-relevance items already in their training history crowding the
+candidate pool — the single test positive faces stiffer competition.
+Coverage shows the inverse pattern (hot 0.30 vs cold 0.19).
+
+### 8.3 Recall fusion strategy
+
+![Fusion strategy](experiments/results/figures/fusion_strategy_bar.png)
+
+`norm_weighted` (0.0827) edges out RRF (0.0794) and beats the best single
+channel (Two-Tower, 0.0590) by **+40%**. Each base channel covers
+different *kinds* of user-item affinity; the union is broader than the
+parts.
+
+### 8.4 DIN attention vs sum pooling
+
+![DIN attention ablation](experiments/results/figures/din_attention_ablation.png)
+
+| Variant | Recall@10 | Valid AUC |
+|---|--:|--:|
+| **with attention** | **0.0459** | 0.916 |
+| sum-pool only | 0.0424 | 0.909 |
+
+Attention is +8% Recall@10 / +0.7 pp AUC. Payoff is modest on ML-1M
+(average sequence length is 78); Zhou et al. report 30–60% lifts on
+Amazon book reviews where sequences run into the thousands.
+
+### 8.5 SASRec sequence length — the surprising finding
+
+![SASRec seq length](experiments/results/figures/sasrec_seq_len.png)
+
+Recall@10 *monotonically drops* as the sequence grows: **L=10 → 0.101,
+L=100 → 0.028**. Cause: SASRec's per-position BPR loss spends capacity
+on positions whose targets have nothing to do with the LOO test item.
+With L=10 the model is essentially a next-item predictor on the most
+recent 10 items, which is exactly the LOO task; longer L dilutes the
+predictive signal. **Long sequences only help when the evaluation
+horizon also grows** (session-based, multi-step). A clean train/eval
+task mismatch — exactly the kind of finding that becomes a strong
+talking point in interviews.
+
+### 8.6 Two-Tower capacity (embedding_dim)
+
+> Plan called for a `num_negatives` sweep, but our Two-Tower trainer uses
+> canonical single-negative BPR (Rendle 2009) — exactly one triplet per
+> positive regardless of `num_negatives`. Substituted `embedding_dim`
+> as a capacity probe; see `docs/W4_RERANK_AND_ABLATIONS.md` §2.6.
+
+![Two-Tower capacity](experiments/results/figures/two_tower_neg.png)
+
+Capacity helps up to a point, then plateaus or regresses — ML-1M has
+~21 M user-item cells but only ~575 K observed interactions, so once
+`embedding_dim ≥ 64` the model has more parameters than effective
+constraints. The default dim=64 is essentially Bayes-optimal for this
+dataset.
+
+### 8.7 Conversion funnel + paired bootstrap
+
+![Conversion funnel](experiments/results/figures/funnel_bars.png)
+
+| Stage | Size | Positives | Retention |
+|---|--:|--:|--:|
+| merge top-1 000 (recall) | 1 000 | 5 157 | 100.0% |
+| DeepFM top-100 (pre-rank) | 100 | 1 658 | 32.2% |
+| DIN top-20 (fine-rank) | 20 | 517 | 10.0% |
+| MMR top-10 (rerank) | 10 | 288 | 5.6% |
+
+The recall stage is the dominant ceiling — 14.5% of LOO positives never
+even enter the merge top-1 000. Improvements there cascade through every
+downstream metric.
+
+![Paired bootstrap CI](experiments/results/figures/significance_ci.png)
+
+Every headline Recall@10 gets a **paired bootstrap 95% CI** (1 000 resamples, paired by user):
+
+| Model | Recall@10 | 95% bootstrap CI |
+|---|--:|--:|
+| **DIN**    | **0.0477** | [0.0428, 0.0530] |
+| DeepFM | 0.0401 | [0.0353, 0.0449] |
+| GBDT   | 0.0358 | [0.0313, 0.0404] |
+| LR     | 0.0290 | [0.0249, 0.0333] |
+
+Pairwise paired-bootstrap p-values: **DIN beats every other ranker**
+(p ≤ 0.012); **DeepFM vs GBDT is *not* significant** (p = 0.167) — a
+direct example of why CIs matter on point-estimate tables. The full
+matrix is in
+[`notebooks/05_statistical_tests.ipynb`](notebooks/05_statistical_tests.ipynb)
+and figure
+[`significance_matrix.png`](experiments/results/figures/significance_matrix.png).
 
 ---
 

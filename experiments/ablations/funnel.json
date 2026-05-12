@@ -1,0 +1,27 @@
+{
+  "n_eval": 6034,
+  "n_test_users": 6034,
+  "stages": [
+    {
+      "name": "merge top-1000",
+      "size": 1000,
+      "positives": 5157
+    },
+    {
+      "name": "DeepFM top-100",
+      "size": 100,
+      "positives": 1658
+    },
+    {
+      "name": "DIN top-20",
+      "size": 20,
+      "positives": 517
+    },
+    {
+      "name": "MMR top-10",
+      "size": 10,
+      "positives": 288
+    }
+  ],
+  "per_user_summary_path": "experiments/ablations/funnel_per_user.parquet"
+}

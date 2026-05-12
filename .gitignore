@@ -89,3 +89,4 @@ tmp/
 docs/
 EXECUTION_PLAN.md
 
+experiments/ablations/funnel_per_user.parquet
