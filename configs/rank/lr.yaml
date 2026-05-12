@@ -1,0 +1,25 @@
+# @package rank
+name: lr
+stage: baseline
+
+model:
+  hash_dim_user: 4096
+  hash_dim_item: 2048
+  C: 1.0
+  solver: liblinear
+
+train:
+  max_iter: 200
+
+input:
+  max_genres: 6
+  max_seq_len: 50
+  negative_ratio: 4
+  valid_ratio: 0.1
+  candidate_pool_size: 1000
+
+output:
+  top_k_after_rerank: 100
+
+eval:
+  k_list: [10, 50, 100]

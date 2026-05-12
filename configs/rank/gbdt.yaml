@@ -1,0 +1,28 @@
+# @package rank
+name: gbdt
+stage: baseline
+
+model:
+  num_leaves: 63
+  min_data_in_leaf: 100
+  feature_fraction: 0.9
+  bagging_fraction: 0.9
+  bagging_freq: 5
+
+train:
+  lr: 0.05
+  num_boost_round: 300
+  early_stopping_rounds: 30
+
+input:
+  max_genres: 6
+  max_seq_len: 50
+  negative_ratio: 4
+  valid_ratio: 0.1
+  candidate_pool_size: 1000
+
+output:
+  top_k_after_rerank: 100
+
+eval:
+  k_list: [10, 50, 100]

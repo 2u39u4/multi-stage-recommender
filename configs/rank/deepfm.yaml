@@ -6,25 +6,27 @@ model:
   embedding_dim: 16
   dnn_hidden: [256, 128, 64]
   dnn_dropout: 0.3
-  dnn_activation: relu
   use_fm: true
-  use_bn: true
-  l2_reg_embedding: 1e-5
-  l2_reg_dnn: 0.0
-  init_std: 1e-4
+  use_deep: true
+  device: cpu
 
 train:
-  epochs: 10
-  batch_size: 2048
-  lr: 1e-3
-  weight_decay: 0.0
-  loss: binary_crossentropy
-  optimizer: adam
-  early_stopping_patience: 3
+  epochs: 8
+  batch_size: 4096
+  inference_batch_size: 16384
+  lr: 1.0e-3
+  weight_decay: 1.0e-5
+  early_stopping_patience: 2
 
 input:
+  max_genres: 6
+  max_seq_len: 50
+  negative_ratio: 4
+  valid_ratio: 0.1
   candidate_pool_size: 1000
-  negative_ratio: 4               # 1:4 positive:negative during training
 
 output:
-  top_k_after_prerank: 100
+  top_k_after_rerank: 100
+
+eval:
+  k_list: [10, 50, 100]
