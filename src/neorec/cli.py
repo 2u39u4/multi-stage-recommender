@@ -7,6 +7,7 @@ Examples
     neorec train recall=als
     neorec train recall=sasrec recall.model.embedding_dim=128
     neorec train rank=deepfm
+    neorec rerank rank=din rerank=mmr rerank.mmr.lambda=0.7
     neorec eval pipeline=full
     neorec serve
 
@@ -130,6 +131,19 @@ def train_rank(ctx: typer.Context) -> None:
     cfg = _compose(_extras(ctx))
     _bootstrap(cfg)
     from neorec.ranking.train import run
+
+    run(cfg)
+
+
+# ---------------------------------------------------------------------------
+# rerank
+# ---------------------------------------------------------------------------
+@app.command("rerank", context_settings=_HYDRA_CTX)
+def rerank(ctx: typer.Context) -> None:
+    """Run the rerank pipeline (recall → rank → MMR / debias / rules)."""
+    cfg = _compose(_extras(ctx))
+    _bootstrap(cfg)
+    from neorec.rerank.pipeline import run
 
     run(cfg)
 
