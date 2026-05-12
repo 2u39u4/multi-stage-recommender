@@ -15,6 +15,12 @@ input:
   max_genres: 6
   max_seq_len: 50
   negative_ratio: 4
+  # Scheme A + B knobs (both disabled by default — see §7.2.1 of the README
+  # for the empirical "look-ahead bias" finding that motivated turning them off):
+  hard_negative_ratio: 0          # set to e.g. 2 to mix in hard negatives from merge top-K
+  hard_pool_size: 200             # sampling depth for hard negatives
+  use_recall_features: false      # set to true to feed recall-layer scores into the ranker
+  recall_feature_depth: 500       # depth used when (re)building the RecallFeatureStore
   valid_ratio: 0.1
   candidate_pool_size: 1000
 

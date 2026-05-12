@@ -250,6 +250,59 @@ def test_din_attention_shape(featurizer: RankingFeaturizer, pairs):
     assert np.all(weights[mask == 0] == 0)
 
 
+def test_recall_feature_store_lookup_roundtrip(tmp_path: Path):
+    """RecallFeatureStore: build from a fake RecallResult, look up, save/load."""
+    from neorec.ranking.recall_features import (
+        DEFAULT_CHANNELS,
+        RecallFeatureStore,
+        _ChannelTable,
+    )
+    from neorec.recall.base import RecallResult
+
+    n_users, n_items, depth = 5, 8, 4
+    rng = np.random.default_rng(0)
+
+    # Synthesise one channel's worth of (user_ids, item_ids, scores).
+    user_ids = np.arange(n_users, dtype=np.int32)
+    item_ids = np.stack([rng.permutation(n_items)[:depth] for _ in range(n_users)]).astype(np.int32)
+    scores = rng.uniform(0.0, 1.0, size=(n_users, depth)).astype(np.float32)
+    table = _ChannelTable.from_result(
+        RecallResult(user_ids=user_ids, item_ids=item_ids, scores=scores, channel="fake"),
+        n_users=n_users, depth=depth,
+    )
+
+    # Build a store with this single channel, then look up known + unknown pairs.
+    store = RecallFeatureStore(
+        n_users=n_users, n_items=n_items, channels=DEFAULT_CHANNELS, depth=depth,
+    )
+    store._tables["als"] = table
+
+    # (user 0, item recalled by als): score is non-zero, mask=1.
+    u0 = 0
+    i0 = int(item_ids[u0, 0])
+    feats_hit = store.lookup_batch(np.array([u0]), np.array([i0]))
+    assert feats_hit.shape == (1, 2 * len(DEFAULT_CHANNELS))
+    als_col = DEFAULT_CHANNELS.index("als")
+    mask_col = als_col + len(DEFAULT_CHANNELS)
+    assert feats_hit[0, als_col] != 0.0
+    assert feats_hit[0, mask_col] == 1.0
+
+    # (user 0, item NOT in als top-K): both score and mask zero.
+    not_recalled = set(range(n_items)) - set(int(x) for x in item_ids[u0])
+    if not_recalled:
+        i_miss = next(iter(not_recalled))
+        feats_miss = store.lookup_batch(np.array([u0]), np.array([i_miss]))
+        assert feats_miss[0, als_col] == 0.0
+        assert feats_miss[0, mask_col] == 0.0
+
+    # save/load round-trip preserves the contents.
+    out = tmp_path / "rfs.npz"
+    store.save(out)
+    loaded = RecallFeatureStore.load(out)
+    feats_hit2 = loaded.lookup_batch(np.array([u0]), np.array([i0]))
+    np.testing.assert_allclose(feats_hit, feats_hit2, atol=1e-6)
+
+
 def test_din_ablation_falls_back_to_sum_pooling(featurizer: RankingFeaturizer, pairs):
     from neorec.ranking.din import DINRanker
 

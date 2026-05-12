@@ -79,6 +79,16 @@ class LRRanker(BaseRanker):
             genre_mat[np.where(valid)[0], batch.genres[valid, col]] = 1.0
         blocks.append(csr_matrix(genre_mat))
 
+        # Recall-layer scores (Scheme A) — appended as dense numeric columns.
+        # The :class:`RecallFeatureStore` already z-scored each channel using
+        # global statistics, so the columns live on a comparable scale to the
+        # one-hot indicators and we can pass them straight through.
+        if batch.recall_scores is not None:
+            recall_block = np.nan_to_num(
+                batch.recall_scores, nan=0.0, posinf=0.0, neginf=0.0
+            ).astype(np.float32)
+            blocks.append(csr_matrix(recall_block))
+
         return hstack(blocks, format="csr")
 
     # ------------------------------------------------------------------

@@ -23,6 +23,10 @@ input:
   max_genres: 6
   max_seq_len: 50
   negative_ratio: 4
+  hard_negative_ratio: 0          # see configs/rank/lr.yaml for the Scheme A discussion
+  hard_pool_size: 200
+  use_recall_features: false
+  recall_feature_depth: 500
   valid_ratio: 0.1
   candidate_pool_size: 1000        # In production DIN sees DeepFM's top-100; here we use
                                    # merge's top-1000 directly so all 4 rankers are

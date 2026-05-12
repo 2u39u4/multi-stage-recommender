@@ -380,6 +380,74 @@ Recall/NDCG/MRR @ K against held-out positives).
 
 Brighter cells are history items the attention unit considers most relevant to the target. Reproduce with `python scripts/build_din_attention.py`; full walk-through in [`notebooks/03_ranking_din_attention.ipynb`](notebooks/03_ranking_din_attention.ipynb).
 
+### 7.2.1 Scheme A — passing recall scores into the ranker (an empirical lesson in look-ahead bias)
+
+A natural next idea is "the ranker is throwing away the recall layer's work — let's
+feed every channel's score (and merge's RRF score) in as numeric input features."
+We implemented this end-to-end (see [`src/neorec/ranking/recall_features.py`](src/neorec/ranking/recall_features.py)
+and `_make_X` / `_batch_to_tensors` in each ranker), wired in **optional
+hard-negative mining** from `merge_rrf` top-200 as a companion fix for the
+random-vs-hard distribution mismatch, and re-ran the four rankers. The result
+was instructive — and a useful negative finding for the project:
+
+| Model | Config | Valid AUC | Recall@10 | Recall@100 |
+|---|---|---:|---:|---:|
+| LR     | baseline (random 1:4)                | 0.872 | 0.0283 | 0.2083 |
+| LR     | +hard-neg (1:2 rand + 1:2 hard)      | 0.683 | 0.0267 | 0.1310 |
+| LR     | +Scheme A (recall scores + masks)    | 0.985 | **0.0003** | 0.0212 |
+| LR     | +Scheme A +hard-neg                  | 0.992 | **0.0005** | 0.0188 |
+| GBDT   | baseline                              | 0.879 | 0.0277 | 0.1951 |
+| GBDT   | +Scheme A +hard-neg                  | 0.994 | **0.0000** | 0.0172 |
+| DeepFM | baseline                              | 0.934 | 0.0343 | 0.2890 |
+| DeepFM | +hard-neg only                        | 0.789 | 0.0322 | 0.2325 |
+| DeepFM | +Scheme A +hard-neg                  | 0.998 | **0.0000** | 0.0189 |
+
+(Full logs and per-K numbers: [`experiments/results/ranking_scheme_a_investigation.md`](experiments/results/ranking_scheme_a_investigation.md).)
+
+The pattern is exactly the same across all three model families: AUC inflates
+toward 1.0 while end-to-end Recall@10 collapses to ~0. After a few hours of
+diagnosis, the root cause turned out to be a subtle **look-ahead bias** in the
+recall scores, not a bug in the implementation:
+
+1. The recall layers (ALS, Two-Tower, SASRec, cold-start) are all **fit on the
+   same `train_df` we sample ranker positives from**. They are *trained to
+   reconstruct exactly those (user, item) interactions*, so a training positive
+   `(u, i_train)` gets a recall score that is artificially high — it is in the
+   recall layer's training set.
+2. The test positive `(u, i_test)` was held out from `train_df`, so the recall
+   layer has only **generalised** to it; its score is moderate, in line with
+   the other candidates in `merge_rrf` top-1 000.
+3. So the ranker happily learns the trivial decision "training-positive
+   recall-score range → label = 1" (giving AUC ≈ 0.99) — but at inference
+   time **no candidate has scores in that range**, so the ranker collapses to
+   approximately uniform ordering inside the candidate pool, and Recall@10
+   crashes to zero. AUC was high precisely because the training task was easy
+   for the wrong reason.
+
+In a production CTR system this whole class of bug doesn't show up: labels are
+real user clicks logged from a previous model's serving, and the recall layer
+was fit at an earlier wall-clock time on a strictly-prior data slice — there
+is no look-ahead. The fix for our offline evaluation is the same idea applied
+to ML-1M: **train the recall layers on a strictly-prior slice of `train_df`,
+and use the remainder as the ranker's positives.** That requires re-fitting
+all five recall channels and is scheduled for W6 (see
+[`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) §12.6 / G4).
+
+**What this means for the codebase today.** We keep the Scheme A implementation
+in the repo because it is genuinely useful — and correct — in any setting
+without look-ahead bias (real-traffic CTR labels, or the W6 out-of-fold split).
+It is exposed as opt-in via Hydra:
+
+```bash
+neorec train rank rank=deepfm \
+    rank.input.use_recall_features=true \
+    rank.input.hard_negative_ratio=2 \
+    rank.input.negative_ratio=2
+```
+
+Defaults remain at the W3 baseline (`use_recall_features=false`,
+`hard_negative_ratio=0`) so the headline §7.2 numbers stay reproducible.
+
 ### 7.3 Latency / Throughput (single-container, 4 vCPU, 8 GB)
 
 | Stage | p50 | p99 | QPS |

@@ -28,6 +28,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from neorec.ranking.recall_features import RecallFeatureStore
+
 log = logging.getLogger(__name__)
 
 # Padding token reserved across multi-hot and sequence features.
@@ -91,6 +93,11 @@ class FeatureBatch:
     genres_mask: np.ndarray               # (N, max_genres) — 1=real, 0=pad
     history: np.ndarray | None = None     # (N, max_seq_len)
     history_mask: np.ndarray | None = None  # (N, max_seq_len)
+    # Recall-layer scores: per-channel score + per-channel "found in top-K" mask.
+    # Shape (N, 2 * n_channels), columns ordered [scores, masks].
+    recall_scores: np.ndarray | None = None
+    # Column names aligned with recall_scores' last axis.
+    recall_score_cols: list[str] = field(default_factory=list)
 
     def __len__(self) -> int:
         return len(next(iter(self.sparse.values())))
@@ -105,6 +112,7 @@ class RankingFeaturizer:
         max_genres: int = 6,
         max_seq_len: int = 50,
         train_interactions_path: Path | None = None,
+        recall_store: RecallFeatureStore | None = None,
     ) -> None:
         processed_dir = Path(processed_dir)
         users = pd.read_parquet(processed_dir / "user_features.parquet")
@@ -141,6 +149,9 @@ class RankingFeaturizer:
         self._train_interactions_path = train_interactions_path
         self._user_history: np.ndarray | None = None  # (num_users, max_seq_len)
         self._user_history_mask: np.ndarray | None = None
+
+        # Optional recall-feature store (lookup per-channel scores per (u, i)).
+        self.recall_store = recall_store
 
         self.schema = FeatureSchema(
             num_users=num_users,
@@ -200,6 +211,7 @@ class RankingFeaturizer:
         user_ids: np.ndarray,
         item_ids: np.ndarray,
         include_history: bool = False,
+        include_recall: bool = True,
     ) -> FeatureBatch:
         user_ids = np.asarray(user_ids, dtype=np.int64)
         item_ids = np.asarray(item_ids, dtype=np.int64)
@@ -229,12 +241,20 @@ class RankingFeaturizer:
             history = None
             history_mask = None
 
+        recall_scores: np.ndarray | None = None
+        recall_score_cols: list[str] = []
+        if include_recall and self.recall_store is not None:
+            recall_scores = self.recall_store.lookup_batch(user_ids, item_ids)
+            recall_score_cols = self.recall_store.feature_cols
+
         return FeatureBatch(
             sparse=sparse,
             genres=genres,
             genres_mask=genres_mask,
             history=history,
             history_mask=history_mask,
+            recall_scores=recall_scores,
+            recall_score_cols=recall_score_cols,
         )
 
     # ------------------------------------------------------------------
@@ -261,11 +281,24 @@ def build_training_pairs(
     user_seen: dict[int, set[int]],
     negative_ratio: int = 4,
     seed: int = 42,
+    hard_candidates: np.ndarray | None = None,
+    hard_negative_ratio: int = 0,
 ) -> pd.DataFrame:
     """Expand training positives into a flat (user, item, label) frame.
 
-    For each positive (u, i, label=1), sample ``negative_ratio`` items uniformly
-    at random from items the user has **not** interacted with → (u, j, label=0).
+    Two negative-sampling regimes are mixed:
+
+    1. **Random negatives** (``negative_ratio`` per positive): items sampled
+       uniformly at random from the catalogue, minus ones the user has seen.
+       Provides the "obvious" decision boundary.
+
+    2. **Hard negatives** (``hard_negative_ratio`` per positive, requires
+       ``hard_candidates``): items the recall layer ranked highly for this
+       user, minus seen items.  ``hard_candidates[u]`` is an ndarray of item
+       ids in descending-score order (typically ``recall_store.top_items_by_score``).
+       Hard negatives make training distribution match inference distribution
+       — without them, a ranker that consumes recall-score features collapses
+       to the trivial decision "is this item in the recall pool?".
 
     Returns
     -------
@@ -277,6 +310,7 @@ def build_training_pairs(
     pos_items = train_df["item_id"].to_numpy(dtype=np.int64)
     n_pos = len(pos_users)
 
+    # --- Random negatives -----------------------------------------------------
     neg_users = np.repeat(pos_users, negative_ratio)
     neg_items = np.empty(n_pos * negative_ratio, dtype=np.int64)
     for i in range(n_pos * negative_ratio):
@@ -290,11 +324,35 @@ def build_training_pairs(
         else:
             neg_items[i] = int(rng.integers(num_items))
 
-    users = np.concatenate([pos_users, neg_users])
-    items = np.concatenate([pos_items, neg_items])
-    labels = np.concatenate(
-        [np.ones(n_pos, dtype=np.int8), np.zeros(n_pos * negative_ratio, dtype=np.int8)]
-    )
+    # --- Hard negatives -------------------------------------------------------
+    hard_users_arr = np.empty(0, dtype=np.int64)
+    hard_items_arr = np.empty(0, dtype=np.int64)
+    if hard_negative_ratio > 0 and hard_candidates is not None:
+        pool_size = hard_candidates.shape[1]
+        hard_users_arr = np.repeat(pos_users, hard_negative_ratio)
+        hard_items_arr = np.empty(n_pos * hard_negative_ratio, dtype=np.int64)
+        for i in range(n_pos * hard_negative_ratio):
+            u = int(hard_users_arr[i])
+            seen = user_seen.get(u, set())
+            user_row = hard_candidates[u]
+            # Try up to 20 random draws from the recall pool, fall back to a
+            # uniform random item if everything we picked was seen / padded.
+            for _ in range(20):
+                pos_in_row = int(rng.integers(pool_size))
+                cand = int(user_row[pos_in_row])
+                if cand >= 0 and cand not in seen:
+                    hard_items_arr[i] = cand
+                    break
+            else:
+                hard_items_arr[i] = int(rng.integers(num_items))
+
+    users = np.concatenate([pos_users, neg_users, hard_users_arr])
+    items = np.concatenate([pos_items, neg_items, hard_items_arr])
+    labels = np.concatenate([
+        np.ones(n_pos, dtype=np.int8),
+        np.zeros(n_pos * negative_ratio, dtype=np.int8),
+        np.zeros(len(hard_users_arr), dtype=np.int8),
+    ])
 
     out = pd.DataFrame({"user_id": users, "item_id": items, "label": labels})
     return out.sample(frac=1.0, random_state=seed).reset_index(drop=True)

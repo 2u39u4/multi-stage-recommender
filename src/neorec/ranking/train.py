@@ -34,6 +34,7 @@ from neorec.eval.metrics import (
     recall_at_k,
 )
 from neorec.ranking.features import RankingFeaturizer, build_training_pairs
+from neorec.ranking.recall_features import DEFAULT_CHANNELS, RecallFeatureStore
 from neorec.utils.io import ensure_dir
 from neorec.utils.mlflow_utils import mlflow_run
 from neorec.utils.timer import Timer
@@ -200,15 +201,82 @@ def run(cfg: DictConfig) -> dict[str, float]:
     # Most models don't need sequences, but DIN does. Build once, use if needed.
     featurizer.build_sequences(train_df)
 
-    # Build (user, item, label) pairs with 1:N random negatives.
+    # -- Recall-score store (Scheme A + hard negatives) -----------------------
+    # The :class:`RecallFeatureStore` is needed if **either** the ranker wants
+    # recall-score inputs (``use_recall_features``) **or** training wants
+    # hard-negative mining (``hard_negative_ratio>0``).  We build/load once and
+    # only attach to the featurizer when the ranker actually consumes them.
+    use_recall_features = bool(cfg.rank.input.get("use_recall_features", True))
+    hard_neg_ratio = int(cfg.rank.input.get("hard_negative_ratio", 0))
+    need_store = use_recall_features or hard_neg_ratio > 0
+    recall_store: RecallFeatureStore | None = None
+    if need_store:
+        depth = int(cfg.rank.input.get("recall_feature_depth", 500))
+        rfs_path = (
+            artifacts_root / "rank" / "recall_features" /
+            f"recall_features_d{depth}.npz"
+        )
+        if rfs_path.exists():
+            log.info("Loading pre-computed RecallFeatureStore from %s", rfs_path)
+            recall_store = RecallFeatureStore.load(rfs_path)
+        else:
+            log.info("Building RecallFeatureStore (depth=%d) — first run is ~30-60 s…", depth)
+            recall_store = RecallFeatureStore(
+                n_users=featurizer.schema.num_users,
+                n_items=featurizer.schema.num_items,
+                channels=DEFAULT_CHANNELS,
+                depth=depth,
+            ).build(cfg)
+            recall_store.save(rfs_path)
+
+    if use_recall_features and recall_store is not None:
+        featurizer.recall_store = recall_store
+        log.info(
+            "Recall features enabled: %d columns = %d channels × (score + mask)",
+            recall_store.n_features, len(recall_store.channels),
+        )
+    else:
+        log.info("Recall-score features as ranker input: DISABLED.")
+
+    # Build (user, item, label) pairs.
+    #
+    # Mixed negatives (Scheme A companion): without hard negatives, every
+    # ranker that consumes recall-score features collapses to the trivial
+    # "is this in the recall pool?" decision, because inference candidates
+    # are 100 % drawn from the pool. Mixed sampling repairs the distribution
+    # gap.
     neg_ratio = int(cfg.rank.input.get("negative_ratio", 4))
-    log.info("Building %d positives + %d:1 random negatives…", len(train_df), neg_ratio)
+    if hard_neg_ratio > 0 and recall_store is None:
+        log.warning(
+            "hard_negative_ratio>0 but recall_store unavailable — falling back to random only."
+        )
+        hard_neg_ratio = 0
+
+    hard_candidates: np.ndarray | None = None
+    if hard_neg_ratio > 0 and recall_store is not None:
+        hard_pool = int(cfg.rank.input.get("hard_pool_size", 200))
+        log.info(
+            "Building hard-negative pool (merge_rrf top-%d) for %d users…",
+            hard_pool, featurizer.schema.num_users,
+        )
+        hard_candidates = recall_store.top_items_by_score(
+            user_ids=np.arange(featurizer.schema.num_users, dtype=np.int64),
+            channel="merge_rrf",
+            k=hard_pool,
+        )
+
+    log.info(
+        "Building %d positives + %d:1 random + %d:1 hard negatives…",
+        len(train_df), neg_ratio, hard_neg_ratio,
+    )
     pairs = build_training_pairs(
         train_df=train_df,
         num_items=featurizer.schema.num_items,
         user_seen=user_seen,
         negative_ratio=neg_ratio,
         seed=int(cfg.get("seed", 42)),
+        hard_candidates=hard_candidates,
+        hard_negative_ratio=hard_neg_ratio,
     )
     valid_ratio = float(cfg.rank.input.get("valid_ratio", 0.1))
     train_pairs, valid_pairs = _time_split_valid(

@@ -69,6 +69,7 @@ class DeepFM(nn.Module):
         dropout: float = 0.3,
         use_fm: bool = True,
         use_deep: bool = True,
+        n_recall_features: int = 0,
     ) -> None:
         super().__init__()
         if not (use_fm or use_deep):
@@ -79,6 +80,7 @@ class DeepFM(nn.Module):
         self.num_genres = num_genres
         self.embedding_dim = embedding_dim
         self.sparse_fields = list(cardinalities.keys())
+        self.n_recall_features = int(n_recall_features)
 
         # Embedding tables for sparse fields + genres.
         self.emb_2nd = nn.ModuleDict({
@@ -95,9 +97,21 @@ class DeepFM(nn.Module):
         self.emb_1st_genre = nn.Embedding(num_genres, 1, padding_idx=0)
         self.bias = nn.Parameter(torch.zeros(1))
 
+        # Recall-score path (Scheme A): a linear projection into embedding
+        # space (concatenated with the embeddings before the deep tower) and
+        # a direct linear scoring head (FM-style wide path).
+        if self.n_recall_features > 0:
+            self.recall_proj = nn.Linear(self.n_recall_features, embedding_dim)
+            self.recall_linear = nn.Linear(self.n_recall_features, 1)
+        else:
+            self.recall_proj = None
+            self.recall_linear = None
+
         # Deep tower.
         if use_deep:
             n_fields = len(self.sparse_fields) + 1  # +1 for genre mean
+            if self.n_recall_features > 0:
+                n_fields += 1                      # +1 for recall-proj vector
             layers: list[nn.Module] = []
             in_dim = n_fields * embedding_dim
             for h in dnn_hidden:
@@ -122,6 +136,12 @@ class DeepFM(nn.Module):
                 if isinstance(m, nn.Linear):
                     nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
                     nn.init.zeros_(m.bias)
+        if self.recall_proj is not None:
+            nn.init.kaiming_normal_(self.recall_proj.weight, nonlinearity="relu")
+            nn.init.zeros_(self.recall_proj.bias)
+        if self.recall_linear is not None:
+            nn.init.zeros_(self.recall_linear.weight)
+            nn.init.zeros_(self.recall_linear.bias)
 
     # ------------------------------------------------------------------
     def forward(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -132,7 +152,15 @@ class DeepFM(nn.Module):
         g_mask = batch["genres_mask"].unsqueeze(-1)             # (B, G, 1)
         g_pooled = (g_emb * g_mask).sum(dim=1) / g_mask.sum(dim=1).clamp(min=1.0)
         emb_list.append(g_pooled)
-        emb_2nd = torch.stack(emb_list, dim=1)                  # (B, K+1, d)
+
+        # Recall-feature projection — looks like one more "field embedding"
+        # so the FM cross + deep tower can interact with it.
+        recall_emb = None
+        if self.recall_proj is not None and "recall_scores" in batch:
+            recall_emb = self.recall_proj(batch["recall_scores"])  # (B, d)
+            emb_list.append(recall_emb)
+
+        emb_2nd = torch.stack(emb_list, dim=1)                  # (B, K+1[+1], d)
 
         logit = self.bias.expand(emb_2nd.size(0))
 
@@ -156,6 +184,11 @@ class DeepFM(nn.Module):
             deep_out = self.dnn(flat).squeeze(-1)
             logit = logit + deep_out
 
+        # Direct linear path for recall scores — adds a strong "wide" signal
+        # without going through the deeper non-linear mixing.
+        if self.recall_linear is not None and "recall_scores" in batch:
+            logit = logit + self.recall_linear(batch["recall_scores"]).squeeze(-1)
+
         return logit  # raw logit; sigmoid in loss / scoring
 
 
@@ -170,6 +203,9 @@ class DeepFMRanker(BaseRanker):
         super().__init__(cfg, featurizer)
         self.device = torch.device(cfg.rank.model.get("device", "cpu"))
         cards = featurizer.cardinalities()
+        n_recall_features = (
+            featurizer.recall_store.n_features if featurizer.recall_store is not None else 0
+        )
         self.model = DeepFM(
             cardinalities=cards,
             num_genres=featurizer.schema.num_genres,
@@ -178,6 +214,7 @@ class DeepFMRanker(BaseRanker):
             dropout=float(cfg.rank.model.dnn_dropout),
             use_fm=bool(cfg.rank.model.use_fm),
             use_deep=bool(cfg.rank.model.get("use_deep", True)),
+            n_recall_features=n_recall_features,
         ).to(self.device)
 
     # ------------------------------------------------------------------
@@ -192,6 +229,8 @@ class DeepFMRanker(BaseRanker):
             tensors[col] = torch.from_numpy(b.sparse[col]).long().to(self.device)
         tensors["genres"] = torch.from_numpy(b.genres).long().to(self.device)
         tensors["genres_mask"] = torch.from_numpy(b.genres_mask).float().to(self.device)
+        if b.recall_scores is not None and self.model.n_recall_features > 0:
+            tensors["recall_scores"] = torch.from_numpy(b.recall_scores).float().to(self.device)
         return tensors
 
     # ------------------------------------------------------------------
@@ -283,6 +322,7 @@ class DeepFMRanker(BaseRanker):
             "cardinalities": self.model.cardinalities,
             "num_genres": self.model.num_genres,
             "embedding_dim": self.model.embedding_dim,
+            "n_recall_features": self.model.n_recall_features,
         }, indent=2))
 
     def load(self, path: str | Path) -> None:

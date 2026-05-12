@@ -65,6 +65,13 @@ class GBDTRanker(BaseRanker):
             df["user_hist_len"] = user_hist_len[user_ids]
         else:
             df["user_hist_len"] = np.zeros(len(user_ids), dtype=np.int32)
+
+        # Recall-layer scores (Scheme A): each channel's score + "found" mask.
+        # GBDT can natively split on continuous features, so we just stick them
+        # in as ordinary numeric columns — no normalisation needed.
+        if batch.recall_scores is not None:
+            for c, name in enumerate(batch.recall_score_cols):
+                df[f"recall__{name}"] = batch.recall_scores[:, c].astype(np.float32)
         return df
 
     # ------------------------------------------------------------------

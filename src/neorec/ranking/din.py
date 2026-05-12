@@ -101,12 +101,14 @@ class DIN(nn.Module):
         dnn_hidden: tuple[int, ...] = (200, 80),
         dropout: float = 0.3,
         use_attention: bool = True,
+        n_recall_features: int = 0,
     ) -> None:
         super().__init__()
         self.use_attention = use_attention
         self.cardinalities = dict(cardinalities)
         self.num_genres = num_genres
         self.embedding_dim = embedding_dim
+        self.n_recall_features = int(n_recall_features)
         self.side_fields = [f for f in cardinalities if f not in ("user_id", "item_id")]
 
         self.user_emb = nn.Embedding(cardinalities["user_id"], embedding_dim)
@@ -118,15 +120,24 @@ class DIN(nn.Module):
 
         self.attention = AttentionUnit(embedding_dim, attention_hidden) if use_attention else None
 
-        # MLP head: [user, target, user_repr_from_history, side(*), genre_pooled].
+        # MLP head: [user, target, user_repr_from_history, side(*), genre_pooled, (recall)].
         n_side = len(self.side_fields)
         head_in = embedding_dim * (3 + n_side + 1)  # +1 for genre
+        head_in += self.n_recall_features            # raw recall-score + mask cols
         layers: list[nn.Module] = []
         for h in dnn_hidden:
             layers += [nn.Linear(head_in, h), nn.PReLU(), nn.Dropout(dropout)]
             head_in = h
         layers.append(nn.Linear(head_in, 1))
         self.head = nn.Sequential(*layers)
+
+        # Wide-style linear path for recall scores — guarantees DIN at least
+        # matches the recall-layer's own ordering even before attention learns.
+        if self.n_recall_features > 0:
+            self.recall_linear = nn.Linear(self.n_recall_features, 1)
+        else:
+            self.recall_linear = None
+
         self._init_weights()
 
     def _init_weights(self) -> None:
@@ -136,6 +147,9 @@ class DIN(nn.Module):
             if isinstance(m, nn.Linear):
                 nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
                 nn.init.zeros_(m.bias)
+        if self.recall_linear is not None:
+            nn.init.zeros_(self.recall_linear.weight)
+            nn.init.zeros_(self.recall_linear.bias)
 
     # ------------------------------------------------------------------
     def _embed_history(
@@ -167,8 +181,14 @@ class DIN(nn.Module):
         g_mask = batch["genres_mask"].unsqueeze(-1)
         g_pooled = (g_emb * g_mask).sum(dim=1) / g_mask.sum(dim=1).clamp(min=1.0)
 
-        x = torch.cat([user_e, target_e, user_repr, *side_vecs, g_pooled], dim=-1)
-        return self.head(x).squeeze(-1)
+        parts = [user_e, target_e, user_repr, *side_vecs, g_pooled]
+        if self.n_recall_features > 0 and "recall_scores" in batch:
+            parts.append(batch["recall_scores"])
+        x = torch.cat(parts, dim=-1)
+        logit = self.head(x).squeeze(-1)
+        if self.recall_linear is not None and "recall_scores" in batch:
+            logit = logit + self.recall_linear(batch["recall_scores"]).squeeze(-1)
+        return logit
 
     @torch.no_grad()
     def attention_weights(self, batch: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -193,6 +213,9 @@ class DINRanker(BaseRanker):
         super().__init__(cfg, featurizer)
         self.device = torch.device(cfg.rank.model.get("device", "cpu"))
         cards = featurizer.cardinalities()
+        n_recall_features = (
+            featurizer.recall_store.n_features if featurizer.recall_store is not None else 0
+        )
         self.model = DIN(
             cardinalities=cards,
             num_genres=featurizer.schema.num_genres,
@@ -201,6 +224,7 @@ class DINRanker(BaseRanker):
             dnn_hidden=tuple(cfg.rank.model.dnn_hidden),
             dropout=float(cfg.rank.model.dnn_dropout),
             use_attention=bool(cfg.rank.model.use_attention),
+            n_recall_features=n_recall_features,
         ).to(self.device)
 
     # ------------------------------------------------------------------
@@ -216,6 +240,8 @@ class DINRanker(BaseRanker):
         # ``history`` may contain -1 padding tokens; we keep them and rely on the mask.
         tensors["history"] = torch.from_numpy(b.history).long().to(self.device)
         tensors["history_mask"] = torch.from_numpy(b.history_mask).float().to(self.device)
+        if b.recall_scores is not None and self.model.n_recall_features > 0:
+            tensors["recall_scores"] = torch.from_numpy(b.recall_scores).float().to(self.device)
         return tensors
 
     # ------------------------------------------------------------------
@@ -328,6 +354,7 @@ class DINRanker(BaseRanker):
             "num_genres": self.model.num_genres,
             "embedding_dim": self.model.embedding_dim,
             "use_attention": self.model.use_attention,
+            "n_recall_features": self.model.n_recall_features,
         }, indent=2))
 
     def load(self, path: str | Path) -> None:
