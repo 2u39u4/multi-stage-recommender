@@ -360,93 +360,119 @@ any *single* signal cannot achieve production-grade catalog coverage.
 
 ### 7.2 Ranking head-to-head — LR · GBDT · DeepFM · DIN
 
-Same training data for all four (positive: train_df, negative: 1 : 4 uniform random),
-same end-to-end evaluation harness (merge channel top-1 000 → re-rank → top-100,
-Recall/NDCG/MRR @ K against held-out positives).
+Two evaluation regimes are reported in this section:
 
-| Model | Stage | Valid AUC | Valid LogLoss | Recall@10 | NDCG@10 | Recall@100 | Latency / user |
-|---|---|---:|---:|---:|---:|---:|---:|
-| LR (hashed + side feats) | baseline | 0.8715 | 0.3390 | 0.0283 | 0.0126 | 0.2083 | **0.39 ms** |
-| GBDT (HistGradientBoosting) | baseline | 0.8793 | 0.3310 | 0.0277 | 0.0119 | 0.1951 | 1.64 ms |
-| **DeepFM** | pre-rank | 0.9342 | 0.2534 | **0.0343** | **0.0151** | **0.2890** | 0.51 ms |
-| **DIN (with attention)** | fine-rank | **0.9692** | **0.1692** | 0.0126 | 0.0055 | 0.2126 | 4.33 ms |
-| DIN (no-attention, ablation) | ablation | 0.9373 | 0.2478 | 0.0336 | 0.0153 | **0.3005** | 0.94 ms |
+* **Full-train (W3 W2 baseline)** — every ranker is trained on `train_df`
+  exactly the same way the recall channels are. Reproduces directly from the
+  W2 / W3 artefacts in `artifacts/recall/` and `artifacts/rank/`.
+* **Out-of-fold (W3 final)** — every user's `train_df` is sliced
+  chronologically into 90 % `train_recall` (used to fit the 5 recall channels)
+  and 10 % `train_ranker` (used as ranker positives). This is the wall-clock
+  approximation a production CTR system would use, and the
+  *blessed* number for downstream comparisons. Artefacts live in
+  `artifacts/recall_oof/` and `artifacts/rank_oof/`. The reasoning behind this
+  split — and a careful negative result on top of it — is documented in
+  [`docs/W3_SCHEME_A_LESSON.md`](docs/W3_SCHEME_A_LESSON.md).
 
-> **Key finding — AUC ≠ end-to-end Recall on this benchmark.** DIN-with-attention has the highest binary-CTR AUC of all four models (0.969), but the *lowest* end-to-end Recall@10. The reason is the training-evaluation mismatch: every ranker is trained with **uniform random negatives**, but at end-to-end time the candidates are the recall layer's top-1 000 — items that already look similar to the user's history. DIN's attention unit assigns high CTR to anything that resembles the recent history, so it cannot discriminate inside that hard-negative pool. DeepFM, with simpler crosses and no attention, ends up the most robust pre-ranker. The W6 plan addresses this with **hard-negative mining** (sampling negatives from the recall pool at training time). The full discussion lives in [`experiments/results/ranking_comparison.md`](experiments/results/ranking_comparison.md).
+Same end-to-end evaluation harness for both regimes (merge channel top-1 000
+→ re-rank → top-100, Recall/NDCG/MRR @ K against held-out positives).
 
-**DIN attention heatmap (5 users × their held-out positive):**
+| Model | Stage | Valid AUC (full / OOF) | Recall@10 (full) | **Recall@10 (OOF)** | Δ vs full-train | Latency / user |
+|---|---|---:|---:|---:|---:|---:|
+| LR (hashed + side feats) | baseline | 0.872 / 0.824 | 0.0283 | **0.0290** | +2 % | **0.35 ms** |
+| GBDT (HistGradientBoosting) | baseline | 0.879 / 0.845 | 0.0277 | **0.0358** | +29 % | 1.40 ms |
+| DeepFM | pre-rank | 0.934 / 0.889 | 0.0343 | **0.0401** | +17 % | 0.48 ms |
+| **DIN (with attention)** | fine-rank | 0.969 / 0.931 | 0.0126 | **0.0477** | **+278 %** | 4.34 ms |
+
+> **Why DIN looks fundamentally different in OOF.** In full-train mode, the
+> recall layers had already memorised the (user, item) pairs the ranker was
+> learning from — DIN's attention unit then over-fit to "match anything that
+> looks like recent history", a signal that completely flips at inference
+> time. Removing the look-ahead via OOF restores DIN's intended advantage
+> (4× over W3) and aligns the within-stage ordering with what the literature
+> predicts: DIN > DeepFM > GBDT > LR.
+
+The W3 baseline-vs-OOF comparison, the full per-K table, and the
+reproduction commands all live in
+[`docs/W3_SCHEME_A_LESSON.md`](docs/W3_SCHEME_A_LESSON.md) §3.2.
+
+**DIN attention heatmap (5 users × their held-out positive, full-train artefact):**
 
 ![DIN attention heatmap](experiments/results/ranking/din_attention_heatmap.png)
 
 Brighter cells are history items the attention unit considers most relevant to the target. Reproduce with `python scripts/build_din_attention.py`; full walk-through in [`notebooks/03_ranking_din_attention.ipynb`](notebooks/03_ranking_din_attention.ipynb).
 
-### 7.2.1 Scheme A — passing recall scores into the ranker (an empirical lesson in look-ahead bias)
+### 7.2.1 Scheme A and the OOF re-fit — two failures and a recovery
 
-A natural next idea is "the ranker is throwing away the recall layer's work — let's
-feed every channel's score (and merge's RRF score) in as numeric input features."
-We implemented this end-to-end (see [`src/neorec/ranking/recall_features.py`](src/neorec/ranking/recall_features.py)
-and `_make_X` / `_batch_to_tensors` in each ranker), wired in **optional
-hard-negative mining** from `merge_rrf` top-200 as a companion fix for the
-random-vs-hard distribution mismatch, and re-ran the four rankers. The result
-was instructive — and a useful negative finding for the project:
+Two ideas were piloted on top of W3 to try to push the ranker numbers up further:
 
-| Model | Config | Valid AUC | Recall@10 | Recall@100 |
-|---|---|---:|---:|---:|
-| LR     | baseline (random 1:4)                | 0.872 | 0.0283 | 0.2083 |
-| LR     | +hard-neg (1:2 rand + 1:2 hard)      | 0.683 | 0.0267 | 0.1310 |
-| LR     | +Scheme A (recall scores + masks)    | 0.985 | **0.0003** | 0.0212 |
-| LR     | +Scheme A +hard-neg                  | 0.992 | **0.0005** | 0.0188 |
-| GBDT   | baseline                              | 0.879 | 0.0277 | 0.1951 |
-| GBDT   | +Scheme A +hard-neg                  | 0.994 | **0.0000** | 0.0172 |
-| DeepFM | baseline                              | 0.934 | 0.0343 | 0.2890 |
-| DeepFM | +hard-neg only                        | 0.789 | 0.0322 | 0.2325 |
-| DeepFM | +Scheme A +hard-neg                  | 0.998 | **0.0000** | 0.0189 |
+1. **Scheme A** — feed each recall channel's z-scored score (and a "did this
+   channel return this item?" mask) into the ranker as extra numeric features,
+   plus hard-negative mining from `merge_rrf` top-200.
+2. **Out-of-fold (OOF) split** — fit the five recall channels on the first
+   90 % of each user's history (chronologically) and train the ranker on the
+   remaining 10 %, eliminating look-ahead bias between the two stages.
 
-(Full logs and per-K numbers: [`experiments/results/ranking_scheme_a_investigation.md`](experiments/results/ranking_scheme_a_investigation.md).)
+Empirical results across all four rankers (Recall@10, leave-one-out test):
 
-The pattern is exactly the same across all three model families: AUC inflates
-toward 1.0 while end-to-end Recall@10 collapses to ~0. After a few hours of
-diagnosis, the root cause turned out to be a subtle **look-ahead bias** in the
-recall scores, not a bug in the implementation:
+| Model  | W3 baseline | +Scheme A (full-train) | **OOF baseline** | OOF +Scheme A +hard-neg |
+|--------|------------:|----------------------:|-----------------:|------------------------:|
+| LR     | 0.0283      | **0.0005** (AUC 0.99) | **0.0290**       | 0.0104                  |
+| GBDT   | 0.0277      | **0.0000** (AUC 0.99) | **0.0358**       | 0.0106                  |
+| DeepFM | 0.0343      | **0.0000** (AUC 0.99) | **0.0401**       | 0.0111                  |
+| DIN    | 0.0126      | (not run)              | **0.0477**       | 0.0121                  |
 
-1. The recall layers (ALS, Two-Tower, SASRec, cold-start) are all **fit on the
-   same `train_df` we sample ranker positives from**. They are *trained to
-   reconstruct exactly those (user, item) interactions*, so a training positive
-   `(u, i_train)` gets a recall score that is artificially high — it is in the
-   recall layer's training set.
-2. The test positive `(u, i_test)` was held out from `train_df`, so the recall
-   layer has only **generalised** to it; its score is moderate, in line with
-   the other candidates in `merge_rrf` top-1 000.
-3. So the ranker happily learns the trivial decision "training-positive
-   recall-score range → label = 1" (giving AUC ≈ 0.99) — but at inference
-   time **no candidate has scores in that range**, so the ranker collapses to
-   approximately uniform ordering inside the candidate pool, and Recall@10
-   crashes to zero. AUC was high precisely because the training task was easy
-   for the wrong reason.
+Two distinct failure modes show up:
 
-In a production CTR system this whole class of bug doesn't show up: labels are
-real user clicks logged from a previous model's serving, and the recall layer
-was fit at an earlier wall-clock time on a strictly-prior data slice — there
-is no look-ahead. The fix for our offline evaluation is the same idea applied
-to ML-1M: **train the recall layers on a strictly-prior slice of `train_df`,
-and use the remainder as the ranker's positives.** That requires re-fitting
-all five recall channels and is scheduled for W6 (see
-[`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) §12.6 / G4).
+* **Scheme A on full-train data** — AUC inflates to 0.99 while Recall@10
+  collapses to ~0. Root cause: the recall layers and the ranker share the
+  same `train_df`, so a training positive's recall score is artificially
+  high (the recallers memorised it). At inference no candidate has scores in
+  that range and the ranker becomes random.
+* **Scheme A on OOF data** — AUC drops back to a "normal" 0.92–0.95 (no more
+  look-ahead), but Recall@10 still loses ~70 % vs the OOF baseline. The
+  remaining problem is that `train_ranker` positives (last 10 % of each
+  user's history) have systematically *higher* recall scores than the
+  truly-held-out test positive (the last leave-one-out item), so the ranker
+  still learns the wrong threshold.
 
-**What this means for the codebase today.** We keep the Scheme A implementation
-in the repo because it is genuinely useful — and correct — in any setting
-without look-ahead bias (real-traffic CTR labels, or the W6 out-of-fold split).
-It is exposed as opt-in via Hydra:
+The **OOF baseline** (no Scheme A) is the W3-final result and is what every
+downstream document references. DIN goes from 0.0126 → 0.0477 (≈ 3.8 ×),
+restoring the within-stage ordering one would expect from the literature
+(DIN > DeepFM > GBDT > LR).
+
+Reproduction:
 
 ```bash
-neorec train rank rank=deepfm \
+# One-shot OOF split (a few seconds)
+python scripts/build_oof_split.py --dataset movielens_1m --frac 0.10
+
+# Recall channels on the 90 % slice (~15 min on M-series MBP)
+for ch in als popularity cold_start two_tower sasrec merge; do
+  neorec train recall recall=$ch data.oof_split=true
+done
+
+# Rankers on the 10 % slice — these are the §7.2 OOF numbers
+for m in lr gbdt deepfm din; do
+  neorec train rank rank=$m data.oof_split=true
+done
+
+# Optional: reproduce Scheme A's failure
+neorec train rank rank=deepfm data.oof_split=true \
     rank.input.use_recall_features=true \
     rank.input.hard_negative_ratio=2 \
     rank.input.negative_ratio=2
 ```
 
-Defaults remain at the W3 baseline (`use_recall_features=false`,
-`hard_negative_ratio=0`) so the headline §7.2 numbers stay reproducible.
+The Scheme A implementation stays in the repo (`use_recall_features` and
+`hard_negative_ratio` are real Hydra knobs) — it remains a correct piece of
+machinery for any future setting with real-traffic CTR labels or list-wise
+losses. It is just disabled by default because, on this benchmark and this
+evaluation, **OOF baseline > OOF + Scheme A**.
+
+For the full retrospective — every number, the diagnosis path, and the
+W4-onward backlog — see
+[`docs/W3_SCHEME_A_LESSON.md`](docs/W3_SCHEME_A_LESSON.md).
 
 ### 7.3 Latency / Throughput (single-container, 4 vCPU, 8 GB)
 

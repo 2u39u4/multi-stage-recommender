@@ -203,9 +203,18 @@ class MergeRecaller(BaseRecaller):
     # ------------------------------------------------------------------
     def fit(self, interactions_path: str | Path) -> None:
         """Load each enabled channel's artefacts. The ``interactions_path``
-        arg is unused — we keep it to match the BaseRecaller signature."""
+        arg is unused — we keep it to match the BaseRecaller signature.
+
+        When ``cfg.data.oof_split`` is true, artefacts are loaded from
+        ``artifacts/recall_oof/`` instead of ``artifacts/recall/`` — see
+        ``docs/W3_SCHEME_A_LESSON.md`` for the rationale.
+        """
         del interactions_path  # silence linter
-        artefacts_root = Path(self.cfg.paths.artifacts) / "recall"
+        oof = False
+        if "data" in self.cfg:
+            oof = bool(self.cfg.data.get("oof_split", False))
+        subdir = "recall_oof" if oof else "recall"
+        artefacts_root = Path(self.cfg.paths.artifacts) / subdir
 
         self._strategy = str(self.cfg.recall.strategy)
         self._k_rrf = int(self.cfg.recall.rrf.k)

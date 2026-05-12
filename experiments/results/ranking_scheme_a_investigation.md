@@ -193,3 +193,72 @@ neorec train rank rank=deepfm rank.input.use_recall_features=false rank.input.ha
 
 All runs are logged to MLflow under the `rank.<name>` experiment with the
 config snapshot attached, so the table above is fully reproducible.
+
+---
+
+## 6. Update — the OOF re-fit (the "should I just rerun on a proper split?" experiment)
+
+The W3 final action item from §4 was: re-fit recall on a chronologically
+strictly-prior slice of `train_df` and re-train rankers on the remainder. We
+implemented this (see [`docs/W3_SCHEME_A_LESSON.md`](../../docs/W3_SCHEME_A_LESSON.md))
+and re-ran every model.
+
+### 6.1 Recall layer — OOF vs full-train
+
+| Channel       | Full-train Recall@10 | OOF Recall@10 |
+|---------------|---------------------:|--------------:|
+| Popularity    | 0.0399               | 0.0355        |
+| Cold-start    | 0.0167               | 0.0143        |
+| iALS          | 0.0573               | 0.0500        |
+| Two-Tower     | 0.0590               | 0.0467        |
+| SASRec        | 0.0570               | 0.0177        |
+| Merge (RRF)   | 0.0794               | 0.0612        |
+
+SASRec loses the most (69 %) because OOF cuts away the chronologically-latest
+10 % of each user's history — exactly the tokens its next-step prediction
+relies on. The other channels lose 10–20 %, which is the more honest
+generalisation gap.
+
+### 6.2 Ranking layer — OOF baseline vs OOF + Scheme A
+
+| Model  | OOF baseline (W3 final) | OOF + Scheme A + hard-neg | OOF AUC (baseline / +Scheme A) |
+|--------|------------------------:|--------------------------:|-------------------------------:|
+| LR     | **0.0290** (+ 2 % vs W3) | 0.0104                    | 0.824 / 0.921                  |
+| GBDT   | **0.0358** (+29 % vs W3) | 0.0106                    | 0.845 / 0.943                  |
+| DeepFM | **0.0401** (+17 % vs W3) | 0.0111                    | 0.889 / 0.942                  |
+| DIN    | **0.0477** (+279 % vs W3) | 0.0121                   | 0.931 / 0.949                  |
+
+**Two important results:**
+
+1. **OOF alone is the right answer.** Every ranker improves over its W3
+   number, DIN dramatically. Look-ahead bias was indeed the dominant issue
+   and OOF dissolves it.
+2. **Scheme A still degrades end-to-end Recall on OOF.** AUC stays inflated
+   (0.92–0.95 vs 0.82–0.89 baseline), Recall@10 drops 64–75 %. The
+   remaining failure mode is a *second-order* train/test mismatch: ranker
+   positives come from each user's last 10 % of history (close in time to
+   `train_recall`, scoring high in the recall layers), but the held-out test
+   item is one step further out (scoring more modestly). The ranker still
+   learns to over-trust recall score, just on a finer-grained level.
+
+### 6.3 Disposition
+
+- **OOF baseline becomes the W3-final result.** It is what
+  [`README.md`](../../README.md) §7.2 quotes and what
+  [`artifacts/rank_oof/`](../../artifacts/rank_oof/) contains.
+- **Scheme A code stays opt-in** (Hydra flag `use_recall_features=true`)
+  rather than being deleted; if a future experiment uses listwise loss,
+  rank-based features, or per-user-leave-one-out positives, this code is the
+  natural starting point. See §5.3 of
+  [`docs/W3_SCHEME_A_LESSON.md`](../../docs/W3_SCHEME_A_LESSON.md) for the
+  full backlog.
+- **Reproduction commands** for the OOF results:
+  ```bash
+  python scripts/build_oof_split.py --dataset movielens_1m --frac 0.10
+  for ch in als popularity cold_start two_tower sasrec merge; do
+    neorec train recall recall=$ch data.oof_split=true
+  done
+  for m in lr gbdt deepfm din; do
+    neorec train rank rank=$m data.oof_split=true
+  done
+  ```

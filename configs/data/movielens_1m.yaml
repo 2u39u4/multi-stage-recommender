@@ -9,6 +9,15 @@ split:
   test_ratio: 0.1               # only for time_based
   min_interactions_per_user: 5  # drop very cold users from training
 
+# Out-of-fold (OOF) recall vs. ranker split — see docs/W3_SCHEME_A_LESSON.md.
+# When `oof_split=true`, recall channels read split=='train_recall' (90% of each
+# user's train history, chronologically earlier) and rankers read
+# split=='train_ranker' (the remaining 10%, chronologically later). All
+# artefacts are written to `artifacts/recall_oof/` and `artifacts/rank_oof/`
+# so the W2 full-train numbers in README §7.1 stay reproducible.
+oof_split: false
+ranker_fraction: 0.10           # only used when oof_split=true
+
 feedback:
   type: implicit                # treat rating >= threshold as positive
   rating_threshold: 4.0

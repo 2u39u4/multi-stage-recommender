@@ -62,20 +62,50 @@ def _instantiate(name: str, cfg: DictConfig, featurizer: RankingFeaturizer):
 # Data preparation
 # ===========================================================================
 def _load_data(cfg: DictConfig):
+    """Load processed splits.
+
+    Returns ``(processed, train_history_df, ranker_positives_df, test_df)`` where:
+
+    * ``train_history_df`` — every train interaction available for building user
+      history sequences / ``user_seen`` masks (in OOF mode this is
+      ``train_recall ∪ train_ranker`` so the ranker still sees the full past).
+    * ``ranker_positives_df`` — interactions used as **positives** for ranker
+      training. In OOF mode this is only the later ``train_ranker`` slice; in
+      legacy mode it equals ``train_history_df``.
+
+    See ``docs/W3_SCHEME_A_LESSON.md`` for the why.
+    """
     processed = Path(cfg.paths.data_processed) / cfg.data.name
     interactions = pd.read_parquet(processed / "interactions.parquet")
-    split = pd.read_parquet(processed / "split.parquet")
-    train_df = (
-        interactions.merge(
-            split[["user_id", "item_id", "split"]],
-            on=["user_id", "item_id"],
-            how="inner",
+    oof = bool(cfg.data.get("oof_split", False))
+    split_filename = "oof_split.parquet" if oof else "split.parquet"
+    split_path = processed / split_filename
+    if not split_path.exists():
+        raise FileNotFoundError(
+            f"Missing {split_path}.\n"
+            "Hint: " + (
+                "python scripts/build_oof_split.py" if oof else "neorec data preprocess"
+            )
         )
-        .query("split == 'train'")
-        .reset_index(drop=True)
+    split = pd.read_parquet(split_path)
+    inter_split = interactions.merge(
+        split[["user_id", "item_id", "split"]],
+        on=["user_id", "item_id"],
+        how="inner",
     )
+    if oof:
+        train_history_df = (
+            inter_split.query("split in ('train_recall', 'train_ranker')")
+            .reset_index(drop=True)
+        )
+        ranker_positives_df = (
+            inter_split.query("split == 'train_ranker'").reset_index(drop=True)
+        )
+    else:
+        train_history_df = inter_split.query("split == 'train'").reset_index(drop=True)
+        ranker_positives_df = train_history_df
     test_df = split.query("split == 'test'").reset_index(drop=True)
-    return processed, train_df, test_df
+    return processed, train_history_df, ranker_positives_df, test_df
 
 
 def _build_user_seen(train_df: pd.DataFrame) -> dict[int, set[int]]:
@@ -102,12 +132,20 @@ def _build_merge_candidates(
     cfg: DictConfig,
     test_user_ids: list[int],
     pool_size: int,
+    extra_user_seen: dict[int, set[int]] | None = None,
 ) -> dict[int, list[int]]:
     """Re-instantiate MergeRecaller using a synthesised cfg with merge defaults.
 
     We can't reuse the original ``cfg.recall`` here because ranking jobs are
     invoked with ``rank=…`` not ``recall=…``. So we compose a minimal recall cfg
     in-memory and let MergeRecaller load all base-channel artefacts on its own.
+
+    ``extra_user_seen`` (OOF-mode only) lets the caller subtract additional
+    historical items that the recallers wouldn't otherwise filter — e.g. the
+    ``train_ranker`` slice that base channels never saw during ``fit``. Without
+    this, those items end up in the candidate pool and crowd out the held-out
+    test positive because the ranker was trained to rank them high.
+    See ``docs/W3_SCHEME_A_LESSON.md``.
     """
     # Compose a recall=merge config in-memory and call fit() to load all channels.
     from neorec.recall.merge import MergeRecaller
@@ -118,10 +156,32 @@ def _build_merge_candidates(
     log.info("Instantiating MergeRecaller to generate %d candidates per user…", pool_size)
     recaller = MergeRecaller(full)
     recaller.fit("")  # loads all per-channel artefacts
-    result = recaller.recall(test_user_ids, k=pool_size)
+    # Ask for more than ``pool_size`` so we can afford to drop train_ranker
+    # items (typically ~10 % of each user's history) and still ship a full pool.
+    request_k = pool_size * 2 if extra_user_seen else pool_size
+    result = recaller.recall(test_user_ids, k=request_k)
     out: dict[int, list[int]] = {}
+    n_dropped = 0
     for u, row in zip(result.user_ids.tolist(), result.item_ids.tolist(), strict=True):
-        out[int(u)] = [int(x) for x in row[:pool_size] if x >= 0]
+        seen = extra_user_seen.get(int(u), set()) if extra_user_seen else set()
+        filtered: list[int] = []
+        for x in row:
+            if x < 0:
+                continue
+            xi = int(x)
+            if xi in seen:
+                n_dropped += 1
+                continue
+            filtered.append(xi)
+            if len(filtered) >= pool_size:
+                break
+        out[int(u)] = filtered
+    if extra_user_seen:
+        log.info(
+            "Filtered %d train_ranker items out of merge candidate pool "
+            "(%.1f / user avg).",
+            n_dropped, n_dropped / max(len(test_user_ids), 1),
+        )
     return out
 
 
@@ -185,12 +245,21 @@ def _eval_end_to_end(
 # ===========================================================================
 def run(cfg: DictConfig) -> dict[str, float]:
     name = str(cfg.rank.name)
-    log.info("=== Training ranking model: %s ===", name)
+    oof = bool(cfg.data.get("oof_split", False))
+    log.info("=== Training ranking model: %s (oof_split=%s) ===", name, oof)
 
-    processed, train_df, test_df = _load_data(cfg)
+    processed, train_history_df, ranker_positives_df, test_df = _load_data(cfg)
     artifacts_root = Path(cfg.paths.artifacts)
+    rank_subdir = "rank_oof" if oof else "rank"
+    log.info(
+        "Loaded %d train_history rows, %d ranker_positive rows, %d test rows.",
+        len(train_history_df), len(ranker_positives_df), len(test_df),
+    )
 
-    user_seen = _build_user_seen(train_df)
+    # ``user_seen`` must cover every item the user has interacted with *during
+    # training*, otherwise random negatives can land on a train_ranker positive
+    # (in OOF mode) and contaminate the labels.
+    user_seen = _build_user_seen(train_history_df)
 
     featurizer = RankingFeaturizer(
         processed_dir=processed,
@@ -198,8 +267,9 @@ def run(cfg: DictConfig) -> dict[str, float]:
         max_seq_len=int(cfg.rank.input.get("max_seq_len", 50)),
     )
 
-    # Most models don't need sequences, but DIN does. Build once, use if needed.
-    featurizer.build_sequences(train_df)
+    # Most models don't need sequences, but DIN does. Build once on the full
+    # training history (both slices in OOF mode).
+    featurizer.build_sequences(train_history_df)
 
     # -- Recall-score store (Scheme A + hard negatives) -----------------------
     # The :class:`RecallFeatureStore` is needed if **either** the ranker wants
@@ -213,7 +283,7 @@ def run(cfg: DictConfig) -> dict[str, float]:
     if need_store:
         depth = int(cfg.rank.input.get("recall_feature_depth", 500))
         rfs_path = (
-            artifacts_root / "rank" / "recall_features" /
+            artifacts_root / rank_subdir / "recall_features" /
             f"recall_features_d{depth}.npz"
         )
         if rfs_path.exists():
@@ -267,10 +337,10 @@ def run(cfg: DictConfig) -> dict[str, float]:
 
     log.info(
         "Building %d positives + %d:1 random + %d:1 hard negatives…",
-        len(train_df), neg_ratio, hard_neg_ratio,
+        len(ranker_positives_df), neg_ratio, hard_neg_ratio,
     )
     pairs = build_training_pairs(
-        train_df=train_df,
+        train_df=ranker_positives_df,
         num_items=featurizer.schema.num_items,
         user_seen=user_seen,
         negative_ratio=neg_ratio,
@@ -301,10 +371,25 @@ def run(cfg: DictConfig) -> dict[str, float]:
     k_list = list(cfg.rank.eval.get("k_list", [10, 50, 100]))
     log.info("Loading merge candidate pool (pool_size=%d, top_k_after=%d)…",
              pool_size, top_k_after)
+    # In OOF mode the base recallers were fit on train_recall only, so they
+    # only filter out items in train_recall — train_ranker items leak into the
+    # candidate pool. Drop them explicitly so candidates match production
+    # semantics ("never recommend something the user has already interacted
+    # with").  Equivalent to giving the recallers the full user history.
+    extra_user_seen: dict[int, set[int]] | None = None
+    if oof:
+        ranker_seen: dict[int, set[int]] = defaultdict(set)
+        for u, i in zip(
+            ranker_positives_df["user_id"].to_numpy(),
+            ranker_positives_df["item_id"].to_numpy(),
+        ):
+            ranker_seen[int(u)].add(int(i))
+        extra_user_seen = ranker_seen
     candidates = _build_merge_candidates(
         cfg=cfg,
         test_user_ids=test_df["user_id"].tolist(),
         pool_size=pool_size,
+        extra_user_seen=extra_user_seen,
     )
     ranking_metrics = _eval_end_to_end(
         model=model,
@@ -316,7 +401,7 @@ def run(cfg: DictConfig) -> dict[str, float]:
     log.info("End-to-end metrics: %s", ranking_metrics)
 
     # Save artefacts
-    out_dir = ensure_dir(artifacts_root / "rank" / name)
+    out_dir = ensure_dir(artifacts_root / rank_subdir / name)
     model.save(out_dir)
 
     # MLflow
@@ -326,6 +411,9 @@ def run(cfg: DictConfig) -> dict[str, float]:
         "model":             name,
         "stage":             str(cfg.rank.stage),
         "dataset":           str(cfg.data.name),
+        "oof_split":         oof,
+        "use_recall_features": use_recall_features,
+        "hard_negative_ratio": hard_neg_ratio,
         "negative_ratio":    neg_ratio,
         "candidate_pool":    pool_size,
         "top_k_after":       top_k_after,
@@ -340,9 +428,14 @@ def run(cfg: DictConfig) -> dict[str, float]:
     mlflow_metrics = {k.replace("@", "_at_"): v for k, v in all_metrics.items()}
     with mlflow_run(
         experiment=cfg.mlflow.experiment_name,
-        run_name=f"rank.{name}",
+        run_name=f"rank.{name}" + (".oof" if oof else ""),
         tracking_uri=cfg.mlflow.tracking_uri,
-        tags={"stage": "rank", "model": name, "dataset": cfg.data.name},
+        tags={
+            "stage": "rank",
+            "model": name,
+            "dataset": cfg.data.name,
+            "split_mode": "oof" if oof else "full",
+        },
     ) as mlf:
         mlf.log_params(flat_params)
         mlf.log_metrics(mlflow_metrics)

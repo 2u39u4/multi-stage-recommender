@@ -78,18 +78,35 @@ def _evaluate(
 
 
 def run(cfg: DictConfig) -> dict[str, float]:
-    """Train + evaluate one recall channel; log to MLflow."""
+    """Train + evaluate one recall channel; log to MLflow.
+
+    When ``cfg.data.oof_split`` is true the channel is fit on the chronologically
+    earlier 90 % of each user's train history (``split=='train_recall'``) and
+    artefacts go to ``artifacts/recall_oof/<name>/`` instead of
+    ``artifacts/recall/<name>/``. See ``docs/W3_SCHEME_A_LESSON.md``.
+    """
     name = str(cfg.recall.name)
-    log.info("=== Training recall channel: %s ===", name)
+    oof = bool(cfg.data.get("oof_split", False))
+    log.info("=== Training recall channel: %s (oof_split=%s) ===", name, oof)
 
     processed = Path(cfg.paths.data_processed) / cfg.data.name
     interactions_path = processed / "interactions.parquet"
-    split_path = processed / "split.parquet"
+    split_filename = "oof_split.parquet" if oof else "split.parquet"
+    split_path = processed / split_filename
+    train_label = "train_recall" if oof else "train"
+    artifact_subdir = "recall_oof" if oof else "recall"
 
     if not interactions_path.exists():
         raise FileNotFoundError(
             f"Run preprocess first: missing {interactions_path}\n"
             "Hint: neorec data preprocess"
+        )
+    if not split_path.exists():
+        raise FileNotFoundError(
+            f"Missing {split_path}.\n"
+            "Hint: " + (
+                "python scripts/build_oof_split.py" if oof else "neorec data preprocess"
+            )
         )
 
     interactions = pd.read_parquet(interactions_path)
@@ -100,7 +117,7 @@ def run(cfg: DictConfig) -> dict[str, float]:
             on=["user_id", "item_id"],
             how="inner",
         )
-        .query("split == 'train'")
+        .query("split == @train_label")
         .reset_index(drop=True)
     )
     test_df = split.query("split == 'test'").reset_index(drop=True)
@@ -109,7 +126,8 @@ def run(cfg: DictConfig) -> dict[str, float]:
     log.info("Train rows=%d, test rows=%d, catalog_size=%d",
              len(train_df), len(test_df), catalog_size)
 
-    train_path = processed / "train_interactions.parquet"
+    train_filename = "train_interactions_oof.parquet" if oof else "train_interactions.parquet"
+    train_path = processed / train_filename
     train_df[["user_id", "item_id", "ts", "rating", "label"]].to_parquet(
         train_path, index=False
     )
@@ -124,7 +142,7 @@ def run(cfg: DictConfig) -> dict[str, float]:
     metrics["fit_seconds"] = t_fit.elapsed_ms / 1000.0
     log.info("Metrics: %s", {k: round(v, 4) for k, v in metrics.items()})
 
-    artefacts_dir = ensure_dir(Path(cfg.paths.artifacts) / "recall" / name)
+    artefacts_dir = ensure_dir(Path(cfg.paths.artifacts) / artifact_subdir / name)
     recaller.save(artefacts_dir)
 
     flat_params: dict[str, object] = {
@@ -132,6 +150,7 @@ def run(cfg: DictConfig) -> dict[str, float]:
         "dataset":          str(cfg.data.name),
         "split_strategy":   str(cfg.data.split.strategy),
         "rating_threshold": float(cfg.data.feedback.rating_threshold),
+        "oof_split":        oof,
     }
     model_cfg = OmegaConf.to_container(cfg.recall.model, resolve=True)  # type: ignore[union-attr]
     if isinstance(model_cfg, dict):
@@ -147,9 +166,14 @@ def run(cfg: DictConfig) -> dict[str, float]:
 
     with mlflow_run(
         experiment=cfg.mlflow.experiment_name,
-        run_name=f"recall.{name}",
+        run_name=f"recall.{name}" + (".oof" if oof else ""),
         tracking_uri=cfg.mlflow.tracking_uri,
-        tags={"stage": "recall", "channel": name, "dataset": cfg.data.name},
+        tags={
+            "stage": "recall",
+            "channel": name,
+            "dataset": cfg.data.name,
+            "split_mode": "oof" if oof else "full",
+        },
     ) as mlf:
         mlf.log_params(flat_params)
         mlf.log_metrics(mlflow_metrics)
