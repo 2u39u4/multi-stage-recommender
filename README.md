@@ -18,15 +18,16 @@
 ## 1. TL;DR — Highlights
 
 > **Project status:** recall stage **complete and benchmarked** (5 channels +
-> 2 fusion strategies, see §7.1). Pre-ranking, fine-ranking, re-ranking, and
-> online serving are scaffolded but in active development — rows marked
-> `pending` / `TBD` below will fill in as W3–W6 of the roadmap complete.
+> 2 fusion strategies, §7.1). Ranking stage **complete and benchmarked** (LR /
+> GBDT / DeepFM / DIN + attention ablation, §7.2). Re-ranking and online
+> serving are scaffolded but in active development — rows marked `pending` /
+> `TBD` below will fill in as W4–W6 of the roadmap complete.
 
-- **End-to-end industrial pipeline** *(recall: implemented; pre-rank / fine-rank / re-rank: in development)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN / Transformer fine-ranking, and rule + diversity re-ranking — mirrors real production stacks at FAANG / ByteDance / Meituan.
-- **Rigorous evaluation**: 7 recall channels already compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); ranking-stage models and ablation studies on attention / sequence length / channel mixing scheduled for W3–W4.
+- **End-to-end industrial pipeline** *(recall + ranking: implemented; re-rank / serving: in development)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN fine-ranking with attention visualisation, plus LR / GBDT baselines — mirrors real production stacks at FAANG / ByteDance / Meituan.
+- **Rigorous evaluation**: 7 recall channels already compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); 4 ranking models compared on AUC / LogLoss + end-to-end Recall/NDCG (§7.2) with a documented training–evaluation mismatch finding; further ablations on sequence length / channel mixing scheduled for W4.
 - **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and a one-command Docker stack. Every **measured** number is reproducible from the recorded MLflow run; `pending` rows fill in once their training job lands.
 - **Online serving** *(W5, planned)*: FastAPI + FAISS HNSW for vector retrieval; Streamlit dashboard for interactive exploration; Prometheus metrics. Latency target: sub-30 ms p99 on a single CPU container; numbers in §7.3 will be populated by `locust` once the API is wired up.
-- **Research flavor**: cold-start strategy (implemented, §7.1); long-tail debias re-ranking *(W4)*, attention visualization for DIN *(W3)*, counterfactual offline evaluation simulating A/B tests *(W4)*.
+- **Research flavor**: cold-start strategy (§7.1), DIN attention visualisation (§7.2); long-tail debias re-ranking *(W4)*, hard-negative mining and counterfactual offline evaluation simulating A/B tests *(W4–W6)*.
 - **Code quality**: ruff + mypy + pre-commit hooks, GitHub Actions CI, pytest suites for `data` / `eval` / `recall` already passing; ranking + serving suites grow in tandem with their modules.
 
 > **End-to-end evaluation on MovieLens-1M** — leave-one-out per user; each user's
@@ -44,9 +45,9 @@
 > | Recall (single) | SASRec (2 blocks, 50 ep) | 0.0570 | 0.0284 | 0.0198 | 0.674 | −0.0003 (−0.5%) |
 > | **Recall (fused)** | **Multi-channel (RRF, 5 ch)** | **0.0794** | **0.0381** | **0.0257** | 0.433 | **+0.0221 (+38.6%)** |
 > | **Recall (fused)** | **Multi-channel (norm_weighted, 5 ch)** | **0.0827** | **0.0397** | **0.0267** | 0.486 | **+0.0254 (+44.3%)** |
-> | Pre-Rank | DeepFM | pending | pending | pending | — | pending |
-> | Fine-Rank | DIN | pending | pending | pending | — | pending |
-> | **End-to-end** | **Full pipeline** | **pending** | **pending** | **pending** | **pending** | **pending** |
+> | Pre-Rank | DeepFM (re-rank merge top-1 000) | 0.0343 | 0.0151 | 0.0095 | — | (different task; see §7.2) |
+> | Fine-Rank | DIN with attention (re-rank merge top-1 000) | 0.0126 | 0.0055 | 0.0034 | — | (different task; see §7.2) |
+> | **End-to-end** | **Full pipeline (recall → DeepFM → MMR)** | **pending** | **pending** | **pending** | **pending** | **pending** |
 
 > **Reading the table.** Recall@10 ≈ 0.06 reflects the strictness of full-rank
 > ranking on a small benchmark — a random recommender scores ~0.003 here, so
@@ -357,15 +358,27 @@ any *single* signal cannot achieve production-grade catalog coverage.
 > only −0.8% / −1.8%. Each learned channel contributes a measurable, distinct
 > marginal — the fused gain is not driven by any single dominant retriever.
 
-### 7.2 End-to-end (recall → rank → rerank, K=10)
+### 7.2 Ranking head-to-head — LR · GBDT · DeepFM · DIN
 
-| Pipeline | Recall@10 | NDCG@10 | HitRate@10 | Diversity (ILS↓) |
-|---|---|---|---|---|
-| Pop only | TBD | TBD | TBD | TBD |
-| ALS only | TBD | TBD | TBD | TBD |
-| ALS + DeepFM | TBD | TBD | TBD | TBD |
-| Multi-recall + DeepFM + DIN | TBD | TBD | TBD | TBD |
-| **+ MMR rerank** | **TBD** | **TBD** | **TBD** | **TBD** |
+Same training data for all four (positive: train_df, negative: 1 : 4 uniform random),
+same end-to-end evaluation harness (merge channel top-1 000 → re-rank → top-100,
+Recall/NDCG/MRR @ K against held-out positives).
+
+| Model | Stage | Valid AUC | Valid LogLoss | Recall@10 | NDCG@10 | Recall@100 | Latency / user |
+|---|---|---:|---:|---:|---:|---:|---:|
+| LR (hashed + side feats) | baseline | 0.8715 | 0.3390 | 0.0283 | 0.0126 | 0.2083 | **0.39 ms** |
+| GBDT (HistGradientBoosting) | baseline | 0.8793 | 0.3310 | 0.0277 | 0.0119 | 0.1951 | 1.64 ms |
+| **DeepFM** | pre-rank | 0.9342 | 0.2534 | **0.0343** | **0.0151** | **0.2890** | 0.51 ms |
+| **DIN (with attention)** | fine-rank | **0.9692** | **0.1692** | 0.0126 | 0.0055 | 0.2126 | 4.33 ms |
+| DIN (no-attention, ablation) | ablation | 0.9373 | 0.2478 | 0.0336 | 0.0153 | **0.3005** | 0.94 ms |
+
+> **Key finding — AUC ≠ end-to-end Recall on this benchmark.** DIN-with-attention has the highest binary-CTR AUC of all four models (0.969), but the *lowest* end-to-end Recall@10. The reason is the training-evaluation mismatch: every ranker is trained with **uniform random negatives**, but at end-to-end time the candidates are the recall layer's top-1 000 — items that already look similar to the user's history. DIN's attention unit assigns high CTR to anything that resembles the recent history, so it cannot discriminate inside that hard-negative pool. DeepFM, with simpler crosses and no attention, ends up the most robust pre-ranker. The W6 plan addresses this with **hard-negative mining** (sampling negatives from the recall pool at training time). The full discussion lives in [`experiments/results/ranking_comparison.md`](experiments/results/ranking_comparison.md).
+
+**DIN attention heatmap (5 users × their held-out positive):**
+
+![DIN attention heatmap](experiments/results/ranking/din_attention_heatmap.png)
+
+Brighter cells are history items the attention unit considers most relevant to the target. Reproduce with `python scripts/build_din_attention.py`; full walk-through in [`notebooks/03_ranking_din_attention.ipynb`](notebooks/03_ranking_din_attention.ipynb).
 
 ### 7.3 Latency / Throughput (single-container, 4 vCPU, 8 GB)
 
