@@ -24,7 +24,7 @@
 > `TBD` below will fill in as W4–W6 of the roadmap complete.
 
 - **End-to-end industrial pipeline** *(recall + ranking: implemented; re-rank / serving: in development)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN fine-ranking with attention visualisation, plus LR / GBDT baselines — mirrors real production stacks at FAANG / ByteDance / Meituan.
-- **Rigorous evaluation**: 7 recall channels already compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); 4 ranking models compared on AUC / LogLoss + end-to-end Recall/NDCG (§7.2) with a documented training–evaluation mismatch finding; further ablations on sequence length / channel mixing scheduled for W4.
+- **Rigorous evaluation**: 7 recall channels compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); 4 ranking models compared end-to-end under an **out-of-fold training pipeline** that decouples recall and ranker training data — production wall-clock semantics, no look-ahead bias between stages (§7.2); further ablations on sequence length / channel mixing scheduled for W4.
 - **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and a one-command Docker stack. Every **measured** number is reproducible from the recorded MLflow run; `pending` rows fill in once their training job lands.
 - **Online serving** *(W5, planned)*: FastAPI + FAISS HNSW for vector retrieval; Streamlit dashboard for interactive exploration; Prometheus metrics. Latency target: sub-30 ms p99 on a single CPU container; numbers in §7.3 will be populated by `locust` once the API is wired up.
 - **Research flavor**: cold-start strategy (§7.1), DIN attention visualisation (§7.2); long-tail debias re-ranking *(W4)*, hard-negative mining and counterfactual offline evaluation simulating A/B tests *(W4–W6)*.
@@ -45,8 +45,8 @@
 > | Recall (single) | SASRec (2 blocks, 50 ep) | 0.0570 | 0.0284 | 0.0198 | 0.674 | −0.0003 (−0.5%) |
 > | **Recall (fused)** | **Multi-channel (RRF, 5 ch)** | **0.0794** | **0.0381** | **0.0257** | 0.433 | **+0.0221 (+38.6%)** |
 > | **Recall (fused)** | **Multi-channel (norm_weighted, 5 ch)** | **0.0827** | **0.0397** | **0.0267** | 0.486 | **+0.0254 (+44.3%)** |
-> | Pre-Rank | DeepFM (re-rank merge top-1 000) | 0.0343 | 0.0151 | 0.0095 | — | (different task; see §7.2) |
-> | Fine-Rank | DIN with attention (re-rank merge top-1 000) | 0.0126 | 0.0055 | 0.0034 | — | (different task; see §7.2) |
+> | Pre-Rank | DeepFM (re-rank merge top-1 000, OOF training) | 0.0401 | 0.0188 | 0.0124 | — | (different task; see §7.2) |
+> | Fine-Rank | **DIN with attention** (re-rank merge top-1 000, OOF training) | **0.0477** | **0.0214** | **0.0135** | — | (different task; see §7.2) |
 > | **End-to-end** | **Full pipeline (recall → DeepFM → MMR)** | **pending** | **pending** | **pending** | **pending** | **pending** |
 
 > **Reading the table.** Recall@10 ≈ 0.06 reflects the strictness of full-rank
@@ -60,6 +60,14 @@
 > magnitude reported for Reciprocal Rank Fusion in Cormack et al., SIGIR 2009;
 > we expect smaller relative gains on industrial-scale datasets where the
 > single-channel baseline is already much stronger.
+>
+> **Training regime.** Recall rows are trained on each user's full `train_df`
+> (the §7.1 benchmark regime). Ranking rows are trained under an **out-of-fold
+> split** — recall channels on each user's first 90 % of history, rankers on
+> the chronologically-later 10 % — mirroring a production wall-clock setup
+> (the §7.2 regime). The two regimes aren't directly comparable: see
+> §7.2's note on "absolute numbers" for why the ranker @10 sits below the
+> recall layer @10 on a small dataset like ML-1M.
 
 Each row links to a per-model report under
 [`experiments/results/`](experiments/results) — params, MLflow run id, and
