@@ -73,7 +73,8 @@ def _load_data(cfg: DictConfig):
       training. In OOF mode this is only the later ``train_ranker`` slice; in
       legacy mode it equals ``train_history_df``.
 
-    See ``docs/W3_SCHEME_A_LESSON.md`` for the why.
+    This prevents recall features trained on the same positives from leaking
+    directly into ranker training labels.
     """
     processed = Path(cfg.paths.data_processed) / cfg.data.name
     interactions = pd.read_parquet(processed / "interactions.parquet")
@@ -145,7 +146,6 @@ def _build_merge_candidates(
     ``train_ranker`` slice that base channels never saw during ``fit``. Without
     this, those items end up in the candidate pool and crowd out the held-out
     test positive because the ranker was trained to rank them high.
-    See ``docs/W3_SCHEME_A_LESSON.md``.
     """
     # Compose a recall=merge config in-memory and call fit() to load all channels.
     from neorec.recall.merge import MergeRecaller

@@ -83,7 +83,8 @@ def run(cfg: DictConfig) -> dict[str, float]:
     When ``cfg.data.oof_split`` is true the channel is fit on the chronologically
     earlier 90 % of each user's train history (``split=='train_recall'``) and
     artefacts go to ``artifacts/recall_oof/<name>/`` instead of
-    ``artifacts/recall/<name>/``. See ``docs/W3_SCHEME_A_LESSON.md``.
+    ``artifacts/recall/<name>/``. The later ``train_ranker`` slice is reserved
+    for ranker labels, which avoids recall/ranker look-ahead leakage.
     """
     name = str(cfg.recall.name)
     oof = bool(cfg.data.get("oof_split", False))

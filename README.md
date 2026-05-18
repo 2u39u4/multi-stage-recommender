@@ -22,21 +22,25 @@
 > GBDT / DeepFM / DIN + attention ablation, §7.2). **Re-ranking stack complete**
 > (MMR + IPS debias + business rules, §7.4) with six controlled ablations,
 > a conversion funnel, and paired-bootstrap 95% CIs on all headline numbers
-> (§8). Online serving still in active development — rows marked `TBD` will
-> fill in as W5–W6 complete.
+> (§8). **Online serving stack complete for W5**: FastAPI hydrates the trained
+> recall/rank/rerank artefacts, Redis cache and FAISS HNSW hooks are implemented,
+> Streamlit provides an interactive demo, and Docker Compose starts API + Redis
+> + Dashboard + MLflow + Prometheus/Grafana.
 
-- **End-to-end industrial pipeline** *(recall + ranking: implemented; re-rank / serving: in development)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN fine-ranking with attention visualisation, plus LR / GBDT baselines — mirrors real production stacks at FAANG / ByteDance / Meituan.
-- **Rigorous evaluation**: 7 recall channels compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); 4 ranking models compared end-to-end under an **out-of-fold training pipeline** that decouples recall and ranker training data — production wall-clock semantics, no look-ahead bias between stages (§7.2); further ablations on sequence length / channel mixing scheduled for W4.
-- **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and a one-command Docker stack. Every **measured** number is reproducible from the recorded MLflow run; `pending` rows fill in once their training job lands.
-- **Online serving** *(W5, planned)*: FastAPI + FAISS HNSW for vector retrieval; Streamlit dashboard for interactive exploration; Prometheus metrics. Latency target: sub-30 ms p99 on a single CPU container; numbers in §7.3 will be populated by `locust` once the API is wired up.
+- **End-to-end industrial pipeline** *(recall + ranking + re-rank + serving: implemented)*: multi-channel recall (ALS + Two-Tower + SASRec + Popularity + Cold-start), DeepFM pre-ranking, DIN fine-ranking with attention visualisation, MMR/rules re-ranking, plus LR / GBDT baselines — mirrors real production stacks at FAANG / ByteDance / Meituan.
+- **Rigorous evaluation**: 7 recall channels compared head-to-head on Recall@K, NDCG@K, MRR, HitRate, and Coverage (§7.1); 4 ranking models compared end-to-end under an **out-of-fold training pipeline** that decouples recall and ranker training data — production wall-clock semantics, no look-ahead bias between stages (§7.2); controlled ablations cover MMR λ, cold-start buckets, fusion, DIN attention, SASRec sequence length, and Two-Tower capacity (§8).
+- **Reproducibility-first**: Hydra configs, fixed seeds, MLflow tracking, deterministic ops, and Docker definitions. Every **offline measured** number is reproducible from the recorded MLflow run or the per-section command; serving latency is exposed by the API and can be regenerated with `make serving-benchmark`.
+- **Online serving** *(W5 complete)*: `/recommend/{user_id}` runs merge recall → DeepFM top-100 → DIN top-20 → MMR/rules top-K and returns per-stage latency; `/metrics` exposes Prometheus counters/histograms; Streamlit calls the live API and displays recommendations, λ comparison, metrics, and DIN attention.
 - **Research flavor**: cold-start strategy (§7.1), DIN attention visualisation (§7.2), **MMR Pareto frontier + IPS debias** (§7.4); **six controlled ablations** including a counter-intuitive SASRec sequence-length finding (§8); conversion-funnel positive-survival analysis; paired-bootstrap 95% CIs on every headline number (§8.7).
-- **Code quality**: ruff + mypy + pre-commit hooks, GitHub Actions CI, pytest suites for `data` / `eval` / `recall` already passing; ranking + serving suites grow in tandem with their modules.
+- **Code quality**: ruff + mypy + pre-commit hooks, GitHub Actions CI, pytest suites for `data` / `eval` / `recall` already passing; W5 serving smoke tests now include FAISS HNSW roundtrip and pass locally (`24 passed`, 2026-05-18).
 
 > **End-to-end evaluation on MovieLens-1M** — leave-one-out per user; each user's
 > last interaction held out; metrics computed via **full-rank scoring over all
-> 3 533 unseen items** (no popularity sampling, no negative subsetting).
+> 3 533 processed catalog items, with already-seen items masked per user**
+> (no popularity sampling, no negative subsetting).
 > The result tables below are populated incrementally as each model is trained
-> and logged to MLflow. Numbers labelled `pending` have not been measured yet.
+> and logged to MLflow. Serving latency is environment-dependent and should be
+> regenerated locally with `make serving-benchmark`.
 >
 > | Stage | Model | Recall@10 | NDCG@10 | MRR@10 | Coverage@10 | Δ Recall@10 vs iALS |
 > |---|---|---|---|---|---|---|
@@ -51,17 +55,18 @@
 > | Fine-Rank | **DIN with attention** (re-rank merge top-1 000, OOF training) | **0.0477** | **0.0214** | **0.0135** | — | (different task; see §7.2) |
 > | **Re-Rank** | **DIN → MMR (λ=0.7) → rules (final top-10)** | **0.0466** | **0.0244** | **0.0176** | **0.383** | accuracy −2% / coverage +27% vs pure DIN |
 
-> **Reading the table.** Recall@10 ≈ 0.06 reflects the strictness of full-rank
-> ranking on a small benchmark — a random recommender scores ~0.003 here, so
-> 0.06 is ~20× over random, in line with prior work on ML-1M.
+> **Reading the table.** Recall@10 ≈ 0.06 reflects the strictness of full-catalog
+> ranking over ~3.5 K catalog items — a random recommender scores ~0.003 here, so
+> 0.06 is ~20× over random. These numbers should **not** be directly compared
+> with SASRec-style ML-1M papers that rank 1 positive against 100 sampled
+> negatives; that easier protocol reports much higher Hit@10 / NDCG@10 values.
 > The Δ column reports **absolute and relative** lift on Recall@10 against the
 > iALS baseline: large relative %s on this benchmark are partly a small-base
 > amplification effect, which is why the absolute change is shown alongside.
 > Multi-channel fusion's lift (+30–40%) is driven by channel diversity
-> (CF + sequential + content + popularity) and is consistent with the typical
-> magnitude reported for Reciprocal Rank Fusion in Cormack et al., SIGIR 2009;
-> we expect smaller relative gains on industrial-scale datasets where the
-> single-channel baseline is already much stronger.
+> (CF + sequential + content + popularity). The use of RRF follows Cormack
+> et al., SIGIR 2009; the exact lift magnitude here is dataset- and
+> channel-specific, not a universal RRF guarantee.
 >
 > **Training regime.** Recall rows are trained on each user's full `train_df`
 > (the §7.1 benchmark regime). Ranking rows are trained under an **out-of-fold
@@ -150,7 +155,7 @@ neorec/
 │   ├── recall/
 │   │   ├── base.py                # AbstractRecaller
 │   │   ├── als.py
-│   │   ├── two_tower.py           # DSSM + sampled softmax
+│   │   ├── two_tower.py           # DSSM / YouTubeDNN-style BPR retrieval
 │   │   ├── sasrec.py              # self-attentive sequential rec
 │   │   ├── popularity.py
 │   │   ├── cold_start.py          # content-based fallback
@@ -189,14 +194,16 @@ neorec/
 ├── notebooks/
 │   ├── 01_eda.ipynb
 │   ├── 02_recall_analysis.ipynb
-│   ├── 03_ablation_din_attention.ipynb
-│   └── 04_funnel_conversion.ipynb
+│   ├── 03_ranking_din_attention.ipynb
+│   ├── 03_ablations.ipynb
+│   ├── 04_funnel_conversion.ipynb
+│   └── 05_statistical_tests.ipynb
 │
 ├── experiments/
 │   ├── results/                   # MLflow-exported tables, plots
 │   └── ablations/
 │
-├── tests/                         # pytest, > 80% coverage
+├── tests/                         # pytest unit + integration coverage
 │
 ├── docker/
 │   ├── Dockerfile.train
@@ -204,7 +211,7 @@ neorec/
 │   └── docker-compose.yaml        # api + redis + prometheus + grafana
 │
 ├── .github/workflows/ci.yaml
-├── Makefile                       # `make all`, `make train`, `make serve`
+├── Makefile                       # setup, training, benchmark, serving helpers
 ├── pyproject.toml                 # uv / poetry-managed
 ├── requirements.txt
 └── README.md
@@ -219,15 +226,14 @@ neorec/
 | MovieLens-1M | 6 040 | 3 706 | 1 M | main experiments |
 | MovieLens-20M | 138 K | 27 K | 20 M | scaling study |
 
-**Splits**: leave-one-out per user — the default in the recsys literature —
+**Splits**: leave-one-out per user — a common protocol in the recsys literature —
 is reported throughout §7. A time-based 80 / 10 / 10 split is **implemented**
-in `data/preprocess.py` (set `data.split.strategy=time_based` to use it) and
-scheduled as a robustness ablation in W4; numbers will be added when run.
+in `data/preprocess.py` (set `data.split.strategy=time_based` to use it), but
+the README headline tables currently report only the leave-one-out runs.
 
 **Negatives**: BPR with uniform random negatives for Two-Tower / SASRec
 (deliberately chosen over in-batch sampled softmax after observing embedding
-collapse on this benchmark — see `experiments/results/recall_two_tower.md`);
-popularity-biased and hard-negative variants scheduled as W4 ablations.
+collapse on this benchmark — see `experiments/results/recall_two_tower.md`).
 
 ### 5.1 Exploratory Data Analysis — what we learned *before* modelling
 
@@ -317,7 +323,7 @@ any *single* signal cannot achieve production-grade catalog coverage.
 |---|---|---|
 | iALS | Matrix Factorization | Hu et al., ICDM 2008 |
 | DSSM Two-Tower | Deep retrieval | Huang et al., CIKM 2013 |
-| YouTubeDNN | Deep retrieval | Covington et al., RecSys 2016 |
+| YouTubeDNN-style retrieval | Deep retrieval pattern | Covington et al., RecSys 2016 |
 | **SASRec** | Self-attentive sequential | Kang & McAuley, ICDM 2018 |
 | Popularity | Heuristic baseline | — |
 | Cold-start | Content-based (genre + meta) | — |
@@ -342,8 +348,9 @@ any *single* signal cannot achieve production-grade catalog coverage.
 
 ## 7. Results
 
-> All numbers are produced by `make benchmark` and logged to MLflow.
-> Plots and significance tests live in `experiments/results/`.
+> Numbers are exported from the per-model MLflow runs and cached experiment
+> artifacts. Per-section reproduction commands are linked from
+> `experiments/results/`; plots and significance tests live there as well.
 
 ### 7.1 Recall stage (MovieLens-1M, leave-one-out, K=200, full-rank)
 
@@ -414,15 +421,47 @@ and
 
 Brighter cells are history items the attention unit considers most relevant to the target. Reproduce with `python scripts/build_din_attention.py`; full walk-through in [`notebooks/03_ranking_din_attention.ipynb`](notebooks/03_ranking_din_attention.ipynb).
 
-### 7.3 Latency / Throughput (single-container, 4 vCPU, 8 GB)
+### 7.3 Online Serving & Latency
 
-| Stage | p50 | p99 | QPS |
-|---|---|---|---|
-| Recall (FAISS HNSW, top-1000) | TBD | TBD | TBD |
-| Pre-rank (DeepFM, batch=1000) | TBD | TBD | TBD |
-| Fine-rank (DIN, batch=100) | TBD | TBD | TBD |
-| Re-rank (MMR + IPS + rules) | 0.8 ms / user | — | — *(in-process; net of ranker)* |
-| **End-to-end** | **TBD** | **TBD** | **TBD** |
+W5 turns the offline funnel into a live FastAPI path:
+
+```text
+GET /recommend/{user_id}
+  → merge recall top-1000
+  → DeepFM pre-rank top-100
+  → DIN fine-rank top-20
+  → MMR + business rules top-K
+```
+
+Each response returns a `latency_ms` breakdown. The code-level in-process
+numbers measured during W3/W4 remain the best reference for per-user model
+compute; network/container p50/p99 are intentionally regenerated locally with
+`make serving-benchmark` because they depend on hardware and Docker runtime.
+
+| Stage | Current implementation | Offline compute reference |
+|---|---|---:|
+| Recall | `MergeRecaller` loads trained ALS / Two-Tower / SASRec / popularity / cold-start artefacts; FAISS HNSW build/load utilities are in `serving/faiss_index.py` | merge recall top-1000 |
+| Pre-rank | DeepFM loads from `artifacts/rank_oof/deepfm`, keeps top-100 | ~0.48 ms / user |
+| Fine-rank | DIN loads from `artifacts/rank_oof/din`, keeps top-20 | ~4.34 ms / user |
+| Re-rank | MMR λ + watched-filter + genre/year caps | ~0.8 ms / user |
+| API overhead | FastAPI + Pydantic + Prometheus metrics | benchmark with `make serving-benchmark` |
+
+Latest W5 serving test run after installing `faiss-cpu` locally:
+
+```text
+faiss 1.13.2
+numpy 2.4.4
+24 passed in 8.78s
+```
+
+Serving-specific commands:
+
+```bash
+make build-faiss          # optional: artifacts/serving/faiss_hnsw.index
+make serve                # FastAPI on :8000
+make dashboard            # Streamlit dashboard on :8501
+make serving-benchmark    # p50 / p95 / p99 / QPS for local API
+```
 
 ### 7.4 Re-ranking — MMR + IPS + business rules
 
@@ -453,7 +492,6 @@ Six controlled experiments quantify what every architectural choice is worth.
 Run any of them with `python scripts/run_ablations.py <name>`; results land
 under `experiments/ablations/*.json` and figures under
 `experiments/results/figures/`. Notebook walk-through: [`notebooks/03_ablations.ipynb`](notebooks/03_ablations.ipynb).
-Detailed write-up: [`docs/W4_RERANK_AND_ABLATIONS.md`](docs/W4_RERANK_AND_ABLATIONS.md).
 
 ### 8.1 MMR λ Pareto frontier
 
@@ -492,9 +530,10 @@ parts.
 | **with attention** | **0.0459** | 0.916 |
 | sum-pool only | 0.0424 | 0.909 |
 
-Attention is +8% Recall@10 / +0.7 pp AUC. Payoff is modest on ML-1M
-(average sequence length is 78); Zhou et al. report 30–60% lifts on
-Amazon book reviews where sequences run into the thousands.
+Attention is +8% Recall@10 / +0.7 pp AUC in this OOF run. Payoff is modest
+on ML-1M; in the DIN paper, the main reported gains are AUC/RelaImpr lifts on
+MovieLens, Amazon Electronics, and Alibaba display-ad data rather than a
+direct Recall@10 lift on this exact protocol.
 
 ### 8.5 SASRec sequence length — the surprising finding
 
@@ -515,15 +554,16 @@ talking point in interviews.
 > Plan called for a `num_negatives` sweep, but our Two-Tower trainer uses
 > canonical single-negative BPR (Rendle 2009) — exactly one triplet per
 > positive regardless of `num_negatives`. Substituted `embedding_dim`
-> as a capacity probe; see `docs/W4_RERANK_AND_ABLATIONS.md` §2.6.
+> as a capacity probe because it is the real model-capacity knob exposed by
+> this implementation.
 
 ![Two-Tower capacity](experiments/results/figures/two_tower_neg.png)
 
 Capacity helps up to a point, then plateaus or regresses — ML-1M has
-~21 M user-item cells but only ~575 K observed interactions, so once
-`embedding_dim ≥ 64` the model has more parameters than effective
-constraints. The default dim=64 is essentially Bayes-optimal for this
-dataset.
+~21 M user-item cells but only ~575 K observed positive interactions, so
+larger embeddings quickly become weakly constrained. The default dim=64 is
+the best measured setting in this sweep, with dim=128 trading a small
+Recall@10 drop for higher coverage.
 
 ### 8.7 Conversion funnel + paired bootstrap
 
@@ -588,8 +628,10 @@ neorec train rank=din
 neorec eval pipeline=full
 
 # 5. launch serving
-neorec serve                              # FastAPI on :8000
-neorec dashboard                          # Streamlit on :8501
+make build-faiss                          # optional HNSW index for vector serving
+make serve                                # FastAPI on :8000
+make dashboard                            # Streamlit on :8501
+make serving-benchmark                    # p50 / p95 / p99 / QPS
 ```
 
 ### 9.2 Docker (recommended for reproducibility)
@@ -605,7 +647,7 @@ docker compose -f docker/docker-compose.yaml up --build
 ### 9.3 Reproduce all paper-style numbers
 
 ```bash
-make all      # downloads, trains 11 models, runs ablations, exports plots
+make all      # downloads data and runs the core training + benchmark targets
 ```
 
 ---
@@ -613,24 +655,46 @@ make all      # downloads, trains 11 models, runs ablations, exports plots
 ## 10. Online Serving API
 
 ```http
-GET /recommend/{user_id}?k=10&diversity=0.3
+GET /recommend/{user_id}?k=10&diversity=0.7
 ```
 
 ```json
 {
   "user_id": 123,
   "items": [
-    {"item_id": 2571, "title": "Matrix, The (1999)", "score": 0.93,
-     "channel": "sasrec", "explain": "watched 4 sci-fi films recently"},
-    ...
+    {
+      "item_id": 2571,
+      "title": "Matrix, The (1999)",
+      "score": 0.93,
+      "channel": "din",
+      "explain": "=merge_rrf; =deepfm; =din; MMR λ=0.70"
+    }
   ],
-  "latency_ms": {"recall": 8, "prerank": 4, "rank": 11, "rerank": 2, "total": 27}
+  "latency_ms": {
+    "recall": 8.1,
+    "pre_rank": 4.2,
+    "fine_rank": 11.5,
+    "rerank": 0.9,
+    "total": 24.7
+  }
 }
 ```
 
-Feature look-ups are cached in Redis; vector search uses a pre-built FAISS HNSW
-index loaded at startup; Prometheus exposes per-stage histogram metrics on
-`/metrics`.
+FastAPI hydrates `OnlinePipeline.from_config()` at startup. If local training
+artefacts are missing, `/health` still works and `/recommend` returns a
+diagnostic 503 instead of crashing the server; once artefacts exist, the live
+path uses:
+
+- `MergeRecaller` for multi-channel recall;
+- `DeepFMRanker` for 1 000 → 100 pre-ranking;
+- `DINRanker` for 100 → 20 fine-ranking;
+- `mmr_rerank` + `apply_rules` for final top-K;
+- `RedisFeatureCache` when Redis is reachable, with an in-process fallback;
+- Prometheus `/metrics` for request counts and per-stage latency histograms.
+
+Dashboard: `streamlit run src/neorec/serving/dashboard.py` or Docker service
+`dashboard`. Tabs cover live recommendation, λ comparison, offline metrics,
+and DIN attention heatmap.
 
 ---
 
@@ -639,9 +703,9 @@ index loaded at startup; Prometheus exposes per-stage histogram metrics on
 - **Configs**: every experiment is a Hydra YAML — no magic numbers in code.
 - **Tracking**: MLflow logs params, metrics, model artefacts, and the exact git SHA.
 - **Determinism**: `set_seed(42)` covers Python / NumPy / PyTorch / TF / CUDA.
-- **Tests**: `pytest tests/` runs unit + integration tests; coverage badge from CI.
-- **Style**: `ruff` + `black` + `mypy --strict` enforced via pre-commit.
-- **CI**: GitHub Actions runs lint + tests on every PR; benchmark on `main`.
+- **Tests**: `pytest tests/` runs unit + integration tests with coverage output.
+- **Style**: `ruff` formatting/checks and `mypy` are wired through local commands and CI.
+- **CI**: GitHub Actions runs lint, tests, and Docker image builds on pushes / PRs.
 
 ---
 

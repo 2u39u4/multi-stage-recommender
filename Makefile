@@ -2,7 +2,7 @@
         download preprocess \
         train-als train-two-tower train-sasrec \
         train-deepfm train-din \
-        benchmark serve dashboard mlflow-ui \
+        benchmark build-faiss serve dashboard mlflow-ui serving-benchmark \
         docker-build docker-up docker-down \
         clean all
 
@@ -64,11 +64,17 @@ benchmark:  ## Run the full benchmark suite (all models + ablations)
 	$(PYTHON) -m neorec.cli eval pipeline=full
 
 # ---------- Serving ----------
+build-faiss:  ## Build FAISS HNSW index from Two-Tower item embeddings
+	$(PYTHON) scripts/build_faiss_index.py
+
 serve:  ## Launch FastAPI on :$(PORT)
 	uvicorn neorec.serving.api:app --host 0.0.0.0 --port $(PORT) --reload
 
 dashboard:  ## Launch Streamlit dashboard
 	streamlit run src/neorec/serving/dashboard.py
+
+serving-benchmark:  ## Benchmark local FastAPI latency
+	$(PYTHON) scripts/benchmark_serving.py --url http://localhost:$(PORT)
 
 mlflow-ui:  ## Launch MLflow UI on :5000
 	mlflow ui --backend-store-uri file:./mlruns --host 0.0.0.0 --port 5000

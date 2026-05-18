@@ -19,13 +19,16 @@ cache:
 
 index:
   type: hnsw
-  path: ${paths.artifacts}/faiss_hnsw.index
-  user_emb_path: ${paths.embeddings}/user_emb.npy
-  item_emb_path: ${paths.embeddings}/item_emb.npy
+  path: ${paths.artifacts}/serving/faiss_hnsw.index
+  user_emb_path: ${paths.artifacts}/recall_oof/two_tower/user_vecs.npy
+  item_emb_path: ${paths.artifacts}/recall_oof/two_tower/item_vecs.npy
+  m: 32
+  ef_construction: 200
+  ef_search: 64
 
 models:
-  deepfm_path: ${paths.artifacts}/deepfm.pt
-  din_path:    ${paths.artifacts}/din.pt
+  deepfm_path: ${paths.artifacts}/rank_oof/deepfm
+  din_path:    ${paths.artifacts}/rank_oof/din
 
 observability:
   prometheus_enabled: true

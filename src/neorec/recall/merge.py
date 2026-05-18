@@ -206,8 +206,8 @@ class MergeRecaller(BaseRecaller):
         arg is unused — we keep it to match the BaseRecaller signature.
 
         When ``cfg.data.oof_split`` is true, artefacts are loaded from
-        ``artifacts/recall_oof/`` instead of ``artifacts/recall/`` — see
-        ``docs/W3_SCHEME_A_LESSON.md`` for the rationale.
+        ``artifacts/recall_oof/`` instead of ``artifacts/recall/`` so merged
+        recall matches the leakage-free OOF training path.
         """
         del interactions_path  # silence linter
         oof = False

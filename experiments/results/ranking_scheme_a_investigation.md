@@ -200,8 +200,7 @@ config snapshot attached, so the table above is fully reproducible.
 
 The W3 final action item from §4 was: re-fit recall on a chronologically
 strictly-prior slice of `train_df` and re-train rankers on the remainder. We
-implemented this (see [`docs/W3_SCHEME_A_LESSON.md`](../../docs/W3_SCHEME_A_LESSON.md))
-and re-ran every model.
+implemented that out-of-fold split and re-ran every model.
 
 ### 6.1 Recall layer — OOF vs full-train
 
@@ -249,9 +248,7 @@ generalisation gap.
 - **Scheme A code stays opt-in** (Hydra flag `use_recall_features=true`)
   rather than being deleted; if a future experiment uses listwise loss,
   rank-based features, or per-user-leave-one-out positives, this code is the
-  natural starting point. See §5.3 of
-  [`docs/W3_SCHEME_A_LESSON.md`](../../docs/W3_SCHEME_A_LESSON.md) for the
-  full backlog.
+  natural starting point.
 - **Reproduction commands** for the OOF results:
   ```bash
   python scripts/build_oof_split.py --dataset movielens_1m --frac 0.10

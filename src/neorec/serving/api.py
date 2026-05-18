@@ -6,15 +6,20 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from hydra import compose, initialize_config_dir
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from pydantic import BaseModel
 from starlette.responses import Response
 
+from neorec.serving.pipeline import OnlinePipeline
+
 log = logging.getLogger(__name__)
+CONFIG_DIR = (Path(__file__).resolve().parents[3] / "configs").as_posix()
 
 # ---------------------------------------------------------------------------
 # Prometheus metrics
@@ -49,6 +54,18 @@ class RecResponse(BaseModel):
     latency_ms: dict[str, float]
 
 
+def _compose_serving_config() -> Any:
+    overrides = [
+        "data.oof_split=true",
+        "rank=din",
+        "rerank=mmr",
+    ]
+    extra = os.environ.get("NEOREC_CONFIG_OVERRIDES", "")
+    overrides.extend([x for x in extra.split() if x])
+    with initialize_config_dir(version_base="1.3", config_dir=CONFIG_DIR):
+        return compose(config_name="config", overrides=overrides)
+
+
 # ---------------------------------------------------------------------------
 # Lifespan — load heavy artefacts once
 # ---------------------------------------------------------------------------
@@ -56,8 +73,19 @@ class RecResponse(BaseModel):
 async def lifespan(app: FastAPI):
     """Load FAISS index, ranking models, and feature cache connections."""
     log.info("NeoRec API starting up…")
-    # TODO(W5 Day 29): instantiate OnlinePipeline.from_config(...) and attach to app.state
     app.state.pipeline = None
+    app.state.startup_error = None
+    if os.environ.get("NEOREC_DISABLE_PIPELINE_LOAD", "0") == "1":
+        log.warning("Pipeline loading disabled by NEOREC_DISABLE_PIPELINE_LOAD=1.")
+    else:
+        try:
+            cfg = _compose_serving_config()
+            app.state.pipeline = OnlinePipeline.from_config(cfg)
+        except Exception as exc:
+            # Keep /health and /metrics available even when local artefacts have not
+            # been built yet; /recommend will return 503 with this diagnostic.
+            app.state.startup_error = str(exc)
+            log.exception("Failed to hydrate OnlinePipeline.")
     yield
     log.info("NeoRec API shutting down.")
 
@@ -82,7 +110,12 @@ app.add_middleware(
 # ---------------------------------------------------------------------------
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "version": app.version}
+    return {
+        "status": "ok",
+        "version": app.version,
+        "pipeline_ready": app.state.pipeline is not None,
+        "startup_error": app.state.startup_error,
+    }
 
 
 @app.get("/metrics")
@@ -100,7 +133,10 @@ def recommend(
     pipeline = app.state.pipeline
     if pipeline is None:
         REQUEST_COUNTER.labels("recommend", "503").inc()
-        raise HTTPException(status_code=503, detail="Pipeline not ready")
+        detail = "Pipeline not ready"
+        if getattr(app.state, "startup_error", None):
+            detail += f": {app.state.startup_error}"
+        raise HTTPException(status_code=503, detail=detail)
 
     try:
         response = pipeline.recommend(user_id=user_id, k=k, diversity=diversity)

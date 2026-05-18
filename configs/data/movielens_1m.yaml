@@ -9,7 +9,7 @@ split:
   test_ratio: 0.1               # only for time_based
   min_interactions_per_user: 5  # drop very cold users from training
 
-# Out-of-fold (OOF) recall vs. ranker split — see docs/W3_SCHEME_A_LESSON.md.
+# Out-of-fold (OOF) recall vs. ranker split.
 # When `oof_split=true`, recall channels read split=='train_recall' (90% of each
 # user's train history, chronologically earlier) and rankers read
 # split=='train_ranker' (the remaining 10%, chronologically later). All
