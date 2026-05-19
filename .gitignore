@@ -88,5 +88,6 @@ tmp/
 # ---------- Internal planning / docs (kept local, not pushed) ----------
 docs/
 EXECUTION_PLAN.md
+problem.md
 
 experiments/ablations/funnel_per_user.parquet

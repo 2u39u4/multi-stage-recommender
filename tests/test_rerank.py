@@ -9,13 +9,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from neorec.eval.counterfactual import ips_estimator, snips_estimator
 from neorec.eval.significance import (
     bootstrap_ci,
     compare_models,
     paired_bootstrap,
     paired_t_test,
 )
-from neorec.eval.counterfactual import ips_estimator, snips_estimator
 from neorec.rerank.debias import (
     ips_rerank,
     item_popularity_from_interactions,

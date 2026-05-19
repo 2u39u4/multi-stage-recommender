@@ -255,7 +255,6 @@ class MergeRecaller(BaseRecaller):
             raise RuntimeError("fit() first to load channels.")
 
         per_channel: list[RecallResult] = []
-        n_users = len(user_ids)
         users_arr = np.asarray(list(user_ids), dtype=np.int32)
         depth = max(self._per_channel_depth, k)
         for name, recaller in self._channels.items():

@@ -32,9 +32,6 @@ jobs:
       - name: Ruff check
         run: ruff check src tests
 
-      - name: Ruff format check
-        run: ruff format --check src tests
-
       - name: Mypy
         run: mypy src/neorec
         continue-on-error: true

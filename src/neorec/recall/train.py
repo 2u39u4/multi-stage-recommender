@@ -11,7 +11,6 @@ import importlib
 import logging
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
@@ -94,7 +93,6 @@ def run(cfg: DictConfig) -> dict[str, float]:
     interactions_path = processed / "interactions.parquet"
     split_filename = "oof_split.parquet" if oof else "split.parquet"
     split_path = processed / split_filename
-    train_label = "train_recall" if oof else "train"
     artifact_subdir = "recall_oof" if oof else "recall"
 
     if not interactions_path.exists():

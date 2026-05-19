@@ -49,7 +49,6 @@ relative strength on cold users is read out by the analysis notebook.
 from __future__ import annotations
 
 import logging
-import math
 from collections.abc import Sequence
 from pathlib import Path
 

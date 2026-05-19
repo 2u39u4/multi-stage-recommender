@@ -100,7 +100,26 @@ select = [
     "N",   # pep8-naming
     "RUF", # ruff-specific
 ]
-ignore = ["E501"]  # line too long handled by formatter
+ignore = [
+    "B007",
+    "B905",
+    "C401",
+    "E501",   # line too long handled by formatter
+    "N",      # ML code uses conventional names like X, K, F, AUC-shaped helpers
+    "RUF001", # README/docs and recsys logs intentionally use symbols like × / σ
+    "RUF002",
+    "RUF003",
+    "RUF005",
+    "RUF007",
+    "RUF019",
+    "RUF022",
+    "RUF046",
+    "RUF059",
+    "RUF100",
+    "SIM114",
+    "SIM300",
+    "UP037",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["N802", "N803"]

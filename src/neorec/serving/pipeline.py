@@ -23,7 +23,7 @@ import pandas as pd
 from omegaconf import DictConfig, OmegaConf
 
 from neorec.ranking.features import RankingFeaturizer
-from neorec.ranking.train import _build_merge_candidates, _instantiate, _load_data
+from neorec.ranking.train import _instantiate, _load_data
 from neorec.recall.merge import MergeRecaller
 from neorec.rerank.mmr import mmr_rerank
 from neorec.rerank.rules import apply_rules

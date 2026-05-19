@@ -742,7 +742,7 @@ and DIN attention heatmap.
 - **Tracking**: MLflow logs params, metrics, model artefacts, and the exact git SHA.
 - **Determinism**: `set_seed(42)` covers Python / NumPy / PyTorch / TF / CUDA.
 - **Tests**: `pytest tests/` runs unit + integration tests with coverage output; `make test-fast` is the CI-safe subset.
-- **Style**: `ruff` formatting/checks and `mypy` are wired through local commands and CI.
+- **Style**: `ruff` lint and `mypy` are wired through local commands and CI.
 - **CI**: GitHub Actions runs lint, tests, and Docker image builds on pushes / PRs.
 - **Release check**: `make release-check` verifies core imports (`faiss`, `torch`, `fastapi`, Streamlit/plotting stack, etc.) before release.
 

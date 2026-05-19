@@ -49,7 +49,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
 from neorec.ranking.base import BaseRanker
-from neorec.ranking.features import SEQ_PAD_VALUE, RankingFeaturizer
+from neorec.ranking.features import RankingFeaturizer
 
 log = logging.getLogger(__name__)
 

@@ -26,7 +26,6 @@ from omegaconf import OmegaConf
 
 from neorec.ranking.features import RankingFeaturizer, build_training_pairs
 
-
 # ===========================================================================
 # Synthetic dataset on disk
 # ===========================================================================
