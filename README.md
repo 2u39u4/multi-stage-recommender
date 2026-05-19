@@ -1,4 +1,4 @@
-# NeoRec — Production-Grade Multi-Stage Recommender
+# NeoRec — Production-Style Multi-Stage Recommender
 
 > Portfolio-ready recommender system on MovieLens: multi-channel recall →
 > DeepFM/DIN ranking → MMR/rules re-ranking → FastAPI + Streamlit serving.
@@ -27,15 +27,16 @@ and serve the result through a monitored API.
   protocol designed to avoid look-ahead bias.
 - **Research evidence**: six controlled ablations, conversion-funnel analysis,
   DIN attention visualization, and paired-bootstrap 95% CIs.
-- **Engineering evidence**: Hydra configs, MLflow runs, pytest/ruff/mypy,
-  FastAPI, Redis fallback, Streamlit dashboard, Docker Compose, Prometheus hooks.
+- **Engineering evidence**: Hydra configs, MLflow runs, pytest + CI-configured
+  Ruff/mypy, FastAPI, Redis fallback, Streamlit dashboard, Docker Compose,
+  Prometheus hooks.
 
 | Layer | What ships | Headline |
 |---|---|---|
 | Recall | iALS + Two-Tower + SASRec + popularity + cold-start | fusion Recall@10 **0.0827** |
 | Ranking | LR / GBDT / DeepFM / DIN | DIN Recall@10 **0.0477**, AUC **0.931** |
 | Re-ranking | MMR + IPS debias + business rules | coverage +27% at λ=0.7 |
-| Serving | `/recommend`, `/metrics`, dashboard | p50 **23.5 ms**, p95 **26.1 ms** locally |
+| Serving | `/recommend`, `/metrics`, dashboard | local p50 **23.5 ms**; Docker p50 **~1.0 s** |
 | Reproducibility | cached JSON, MLflow, generated figures | README image references are committed |
 
 Evaluation uses MovieLens-1M leave-one-out with full-catalog scoring over all
@@ -49,7 +50,7 @@ ablation caches live under [`experiments/ablations/`](experiments/ablations).
 
 ```mermaid
 flowchart TD
-    A[User Behavior Logs<br/>MovieLens 1M / 20M] --> B[Feature Engineering<br/>+ Feature Store]
+    A[User Behavior Logs<br/>MovieLens 1M] --> B[Feature Engineering<br/>+ Feature Store]
     B --> C1[ALS / iALS<br/>Recall: 300]
     B --> C2[Two-Tower DSSM<br/>Recall: 500]
     B --> C3[SASRec<br/>Recall: 300]
@@ -187,7 +188,7 @@ neorec/
 | Dataset | Users | Items | Interactions | Used for |
 |---|---|---|---|---|
 | MovieLens-1M | 6 040 | 3 706 | 1 M | main experiments |
-| MovieLens-20M | 138 K | 27 K | 20 M | scaling study |
+| MovieLens-20M | 138 K | 27 K | 20 M | supported future scaling target |
 
 **Splits**: leave-one-out per user — a common protocol in the recsys literature —
 is reported throughout §7. A time-based 80 / 10 / 10 split is **implemented**
@@ -261,7 +262,7 @@ right Drama, not Drama vs Western), not user-level.
 Gini coefficient is **0.70** — close to income-inequality levels. A
 popularity-only recommender serving top-200 items covers only ~6% of the
 catalog. This is the formal motivation for multi-channel fusion: relying on
-any *single* signal cannot achieve production-grade catalog coverage.
+any *single* signal is not enough for production-style catalog coverage.
 
 ![Long-tail coverage](experiments/results/eda/07_longtail_coverage.png)
 
@@ -783,5 +784,5 @@ Possible future research directions, outside this finished version:
 GitHub: [2u39u4](https://github.com/2u39u4)
 
 > *Built end-to-end as a portfolio project to demonstrate proficiency across
-> the full recommender-system stack — from research-grade modelling to
-> production-grade serving.*
+> the full recommender-system stack — from research-style modelling to
+> production-style serving.*

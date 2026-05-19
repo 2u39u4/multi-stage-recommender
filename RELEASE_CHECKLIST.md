@@ -70,12 +70,11 @@ version.
   Docker core stack benchmark: p50=1002.27 ms, p95=1311.45 ms,
   p99=1488.62 ms, QPS=3.85 over 30 requests at concurrency=4.
 
-- [ ] Confirm no generated secrets or local artefacts are staged before committing:
+- [x] Confirm no generated secrets or local artefacts are staged before committing:
   ```bash
   git status --short
   ```
-  Current working tree intentionally contains uncommitted release edits; run
-  this again immediately before the final commit.
+  Final git status was verified clean after commit and push.
 
 ## Explicitly Out Of Scope
 
