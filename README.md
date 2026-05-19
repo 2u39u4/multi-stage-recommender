@@ -705,7 +705,7 @@ GET /recommend/{user_id}?k=10&diversity=0.7
       "title": "Matrix, The (1999)",
       "score": 0.93,
       "channel": "din",
-      "explain": "=merge_rrf; =deepfm; =din; MMR λ=0.70"
+      "explain": "recall=merge_rrf; pre_rank=deepfm; fine_rank=din; MMR lambda=0.70"
     }
   ],
   "latency_ms": {

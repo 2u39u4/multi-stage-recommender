@@ -305,7 +305,10 @@ class OnlinePipeline:
                 title=self.item_titles.get(i),
                 score=s,
                 channel=fine_channel,
-                explain=f"={recall_channel}; ={pre_channel}; ={fine_channel}; MMR λ={diversity:.2f}",
+                explain=(
+                    f"recall={recall_channel}; pre_rank={pre_channel}; "
+                    f"fine_rank={fine_channel}; MMR lambda={diversity:.2f}"
+                ),
             )
             for i, s in zip(ordered, final_scores, strict=True)
         ]

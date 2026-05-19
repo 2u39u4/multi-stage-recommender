@@ -61,7 +61,7 @@ def main() -> None:
         col1, col2, col3 = st.columns([1, 1, 2])
         user_id = col1.number_input("user_id", min_value=0, value=1, step=1)
         k = col2.slider("top-K", min_value=5, max_value=20, value=10)
-        diversity = col3.slider("MMR λ ()", 0.0, 1.0, 0.7, 0.05)
+        diversity = col3.slider("MMR λ (higher = more relevance)", 0.0, 1.0, 0.7, 0.05)
         if st.button("Recommend", type="primary"):
             try:
                 data = _get_json(f"{API_URL}/recommend/{int(user_id)}?k={k}&diversity={diversity}")
@@ -73,7 +73,10 @@ def main() -> None:
 
     with tab_compare:
         st.subheader("Model A vs Model B")
-        st.caption(" DeepFM → DIN → MMR MMR λ ")
+        st.caption(
+            "The online path is fixed to DeepFM -> DIN -> MMR; this tab compares "
+            "recommendation lists under different MMR λ values."
+        )
         user_id_cmp = st.number_input("compare user_id", min_value=0, value=1, step=1)
         left, right = st.columns(2)
         for lam, col in [(0.3, left), (0.9, right)]:
