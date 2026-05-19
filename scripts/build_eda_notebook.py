@@ -525,7 +525,7 @@ CELLS: list[dict] = [
         "| Median user is active on **1 day** (rating ceremony); 24.4% on ≥3 distinct days | SASRec captures within-session item semantics; cross-session signal is weak on ML-1M — this explains its modest gap vs Two-Tower |",
         "| 18 genres, multi-label (avg **1.69** per movie) | TF-IDF over genres is a non-degenerate content representation for cold-start |",
         "| D1 vs D10 genre cosine similarity **≈ 0.998** | head-genre preferences are uniform — mean-popularity fallback in `cold_start.py` is essentially free; TF-IDF earns its keep on **item-level** discrimination, not user-level |",
-        "| Gini **≈ 0.7**; popularity-only top-200 covers **<6%** of catalog | multi-channel fusion (RRF) is required to hit production-grade catalog coverage |",
+        "| Gini **≈ 0.7**; popularity-only top-200 covers **<6%** of catalog | multi-channel fusion (RRF) is needed for production-style catalog coverage |",
         "",
         "All 7 plots are exported to `experiments/results/eda/` and embedded in",
         "the project README §5 (Datasets).",

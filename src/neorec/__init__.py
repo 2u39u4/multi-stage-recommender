@@ -1,4 +1,4 @@
-"""NeoRec — a production-grade multi-stage recommender system.
+"""NeoRec — a production-style multi-stage recommender system.
 
 Pipeline stages:
     1. ``neorec.data``     — download, preprocess, feature engineering

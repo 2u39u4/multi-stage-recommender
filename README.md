@@ -740,7 +740,7 @@ and DIN attention heatmap.
 ## 11. Engineering Practices
 
 - **Configs**: every experiment is a Hydra YAML — no magic numbers in code.
-- **Tracking**: MLflow logs params, metrics, model artefacts, and the exact git SHA.
+- **Tracking**: MLflow logs params, metrics, model artefacts, and run metadata.
 - **Determinism**: `set_seed(42)` covers Python / NumPy / PyTorch / TF / CUDA.
 - **Tests**: `pytest tests/` runs unit + integration tests with coverage output; `make test-fast` is the CI-safe subset.
 - **Style**: `ruff` lint and `mypy` are wired through local commands and CI.

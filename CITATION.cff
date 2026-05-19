@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this work, please cite it as below."
-title: "NeoRec: A Production-Grade Multi-Stage Recommender System"
+title: "NeoRec: A Production-Style Multi-Stage Recommender System"
 abstract: >
   An end-to-end, reproducible, industrial-style recommendation pipeline on
   MovieLens with multi-channel recall, DeepFM pre-ranking, DIN fine-ranking,

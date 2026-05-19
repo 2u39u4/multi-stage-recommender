@@ -55,7 +55,7 @@ def _bootstrap(cfg: DictConfig) -> None:
 app = typer.Typer(
     name="neorec",
     add_completion=False,
-    help="NeoRec — production-grade multi-stage recommender system.",
+    help="NeoRec — production-style multi-stage recommender system.",
     no_args_is_help=True,
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
