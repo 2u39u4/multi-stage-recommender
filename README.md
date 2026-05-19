@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)]()
 
 **Repository**: https://github.com/2u39u4/multi-stage-recommender  
-**Release status**: final portfolio code/artifact release; demo video and blog are intentionally out of scope.
+**Status**: final portfolio release.
 
 ---
 
