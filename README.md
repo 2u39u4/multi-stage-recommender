@@ -753,8 +753,7 @@ and DIN attention heatmap.
 
 This repository is the final portfolio version of NeoRec. The project stops at
 the reproducible code, offline experiments, generated figures, tests, Docker
-serving stack, and release checklist. Demo video and blog artifacts are not part
-of this release.
+serving stack, and release checklist.
 
 Possible future research directions, outside this finished version:
 
