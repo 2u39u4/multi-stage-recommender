@@ -1,4 +1,4 @@
-.PHONY: help install install-dev lint format test test-fast cov \
+.PHONY: help install install-dev lint format test test-fast cov release-check \
         download preprocess \
         train-als train-two-tower train-sasrec \
         train-deepfm train-din \
@@ -42,6 +42,9 @@ test-fast:  ## Run only fast tests (exclude slow)
 cov:  ## Open HTML coverage report
 	pytest --cov-report=html
 	open htmlcov/index.html || xdg-open htmlcov/index.html
+
+release-check:  ## Verify key imports and release-readiness environment
+	$(PYTHON) scripts/check_release_ready.py
 
 # ---------- Data pipeline ----------
 download:  ## Download MovieLens dataset
