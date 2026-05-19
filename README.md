@@ -5,7 +5,6 @@
 
 [![Python](https://img.shields.io/badge/python-3.10-blue.svg)]()
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2-EE4C2C.svg)]()
-[![TensorFlow](https://img.shields.io/badge/TF-2.15-FF6F00.svg)]()
 [![FAISS](https://img.shields.io/badge/FAISS-1.8-006699.svg)]()
 [![MLflow](https://img.shields.io/badge/MLflow-2.x-0194E2.svg)]()
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)]()
@@ -29,7 +28,7 @@ and serve the result through a monitored API.
 - **Research evidence**: six controlled ablations, conversion-funnel analysis,
   DIN attention visualization, and paired-bootstrap 95% CIs.
 - **Engineering evidence**: Hydra configs, MLflow runs, pytest/ruff/mypy,
-  FastAPI, Redis fallback, Streamlit dashboard, Docker Compose, Prometheus.
+  FastAPI, Redis fallback, Streamlit dashboard, Docker Compose, Prometheus hooks.
 
 | Layer | What ships | Headline |
 |---|---|---|
@@ -82,11 +81,11 @@ designs documented by Google, Meta, ByteDance, and Pinterest.
 
 | Layer | Tools |
 |---|---|
-| **Language / DL** | Python 3.10, PyTorch 2.2, TensorFlow 2.15 (DeepFM via `deepctr-torch`) |
+| **Language / DL** | Python 3.10, PyTorch 2.2; optional TensorFlow/deepctr extras are isolated from the shipped path |
 | **Classic ML / CF** | `implicit` (iALS), `lightfm`, scikit-learn |
 | **Vector Search** | FAISS (HNSW, IVF-PQ) |
 | **Config & Tracking** | Hydra, MLflow, Weights & Biases (optional) |
-| **Serving** | FastAPI, Uvicorn, Redis, Prometheus, Streamlit |
+| **Serving** | FastAPI, Uvicorn, Redis, Streamlit; Prometheus/Grafana are optional observability services |
 | **Containerization** | Docker, docker-compose |
 | **Quality** | pytest, ruff, mypy, pre-commit, GitHub Actions |
 | **Reference impls** | [Microsoft Recommenders](https://github.com/microsoft/recommenders) (baseline cross-check) |
@@ -172,7 +171,7 @@ neorec/
 ├── docker/
 │   ├── Dockerfile.train
 │   ├── Dockerfile.serve
-│   └── docker-compose.yaml        # api + redis + prometheus + grafana
+│   └── docker-compose.yaml        # core serving + optional observability
 │
 ├── .github/workflows/ci.yaml
 ├── Makefile                       # setup, training, benchmark, serving helpers
@@ -420,6 +419,17 @@ p95_ms=26.10
 p99_ms=26.95
 ```
 
+Docker serving benchmark (Docker Desktop, `api + redis + dashboard`, 30 requests,
+concurrency=4, warm pipeline):
+
+```text
+requests_ok=30 errors=0 elapsed_s=7.79
+qps=3.85
+p50_ms=1002.27
+p95_ms=1311.45
+p99_ms=1488.62
+```
+
 Static dashboard overview generated from cached metrics:
 
 ![Dashboard overview](experiments/results/figures/dashboard_overview.png)
@@ -437,7 +447,13 @@ GET /health -> 200, pipeline_ready=true
 GET /metrics -> 200
 GET /recommend/1 -> 200
 Streamlit /_stcore/health -> 200
+Docker image build -> PASS
+Docker core stack (api + redis + dashboard) -> PASS
 ```
+
+Observability services (`mlflow`, `prometheus`, `grafana`) are defined behind
+the Docker Compose `observability` profile. They are useful for local inspection
+but are not required for the release serving contract above.
 
 Final release checks additionally cover README figure generation:
 
@@ -633,11 +649,27 @@ make serving-benchmark                    # p50 / p95 / p99 / QPS
 
 ### 9.2 Docker (recommended for reproducibility)
 
+The core Docker path expects the same local assets as the Python serving path:
+processed parquet files under `data/processed/` and trained model artefacts
+under `artifacts/`. On a fresh clone, run the local data/model steps in §9.1
+or restore those directories before expecting `/recommend` to return live
+recommendations. Without artefacts, `/health` still works and reports the
+missing path, but `/recommend` intentionally returns a diagnostic 503.
+
+Core serving stack, verified for this release:
+
 ```bash
-docker compose -f docker/docker-compose.yaml up --build
+docker compose -f docker/docker-compose.yaml up --build api redis dashboard
 # → API:        http://localhost:8000/docs
 # → Dashboard:  http://localhost:8501
+```
+
+Optional observability stack:
+
+```bash
+docker compose -f docker/docker-compose.yaml --profile observability up -d
 # → MLflow UI:  http://localhost:5000
+# → Prometheus: http://localhost:9090
 # → Grafana:    http://localhost:3000
 ```
 

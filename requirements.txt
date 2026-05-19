@@ -1,17 +1,13 @@
 # Core
-torch>=2.2,<3
-numpy>=1.26
+torch>=2.2,<2.3
+numpy>=1.26,<2.0
 pandas>=2.2
 pyarrow>=15
 scikit-learn>=1.4
 
 # Classic CF / retrieval
 implicit>=0.7
-lightfm>=1.17
 faiss-cpu>=1.8
-
-# Deep ranking
-deepctr-torch>=0.2.9
 
 # Config + tracking
 hydra-core>=1.3

@@ -165,7 +165,9 @@ class OnlinePipeline:
         fine_ranker = None
         for name, attr in (("deepfm", "pre_ranker"), ("din", "fine_ranker")):
             try:
-                model_cfg = OmegaConf.merge(cfg, {"rank": OmegaConf.load(
+                base_cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+                OmegaConf.set_struct(base_cfg, False)
+                model_cfg = OmegaConf.merge(base_cfg, {"rank": OmegaConf.load(
                     Path(__file__).resolve().parents[3] / "configs" / "rank" / f"{name}.yaml"
                 )})
                 model = _instantiate(name, model_cfg, featurizer)

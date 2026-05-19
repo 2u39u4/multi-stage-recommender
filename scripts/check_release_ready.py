@@ -9,6 +9,9 @@ from __future__ import annotations
 import importlib
 import platform
 import sys
+from importlib.metadata import version
+from packaging.requirements import Requirement
+from packaging.version import Version
 
 
 REQUIRED_IMPORTS = [
@@ -25,6 +28,11 @@ REQUIRED_IMPORTS = [
     "omegaconf",
     "faiss",
 ]
+
+REQUIRED_VERSION_SPECS = {
+    "torch": "torch>=2.2,<2.3",
+    "numpy": "numpy>=1.26,<2.0",
+}
 
 OPTIONAL_SHOWCASE_IMPORTS = [
     "streamlit",
@@ -43,6 +51,13 @@ def _check_import(name: str) -> tuple[bool, str]:
     return True, str(version)
 
 
+def _check_requirement(package: str, requirement: str) -> tuple[bool, str]:
+    req = Requirement(requirement)
+    installed = Version(version(package))
+    ok = installed in req.specifier
+    return ok, f"{installed} required {req.specifier}"
+
+
 def main() -> int:
     print("NeoRec release-readiness check")
     print(f"python={sys.version.split()[0]} platform={platform.platform()}")
@@ -54,6 +69,13 @@ def main() -> int:
         print(f"  {'OK ' if ok else 'ERR'} {name}: {detail}")
         if not ok:
             failed.append(name)
+
+    print("\nRequired version constraints:")
+    for package, requirement in REQUIRED_VERSION_SPECS.items():
+        ok, detail = _check_requirement(package, requirement)
+        print(f"  {'OK ' if ok else 'ERR'} {package}: {detail}")
+        if not ok:
+            failed.append(f"{package} ({detail})")
 
     print("\nOptional showcase imports:")
     for name in OPTIONAL_SHOWCASE_IMPORTS:

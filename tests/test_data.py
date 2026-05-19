@@ -61,6 +61,16 @@ def test_preprocess_creates_all_outputs(tmp_path: Path) -> None:
                 "sequences", "split", "id_maps", "stats"):
         assert paths[key].exists(), f"{key} missing"
 
+    from neorec.data.feature_store import FeatureStore
+
+    store = FeatureStore(paths["interactions"].parent)
+    user = store.get_user(0)
+    item = store.get_item(0)
+    assert user.user_id == 0
+    assert isinstance(user.history, list)
+    assert item.item_id == 0
+    assert store.batch_get_items([0])[0] == item
+
 
 def test_zipfile_helper_round_trip(tmp_path: Path) -> None:
     """The unzip helper must skip extraction when top-level dir is already there."""

@@ -6,7 +6,6 @@ FROM python:3.10-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
@@ -17,10 +16,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY README.md requirements.txt pyproject.toml ./
-RUN pip install --upgrade pip \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip \
     && pip install \
-        "torch>=2.2,<3" \
-        "numpy>=1.26,<2" \
+        "torch>=2.2,<2.3" \
+        "numpy>=1.26,<2.0" \
         "pandas>=2.2" \
         "pyarrow>=15" \
         "scikit-learn>=1.4" \

@@ -15,6 +15,7 @@ from neorec.eval.significance import (
     paired_bootstrap,
     paired_t_test,
 )
+from neorec.eval.counterfactual import ips_estimator, snips_estimator
 from neorec.rerank.debias import (
     ips_rerank,
     item_popularity_from_interactions,
@@ -112,6 +113,15 @@ def test_ips_exponent_zero_is_identity() -> None:
 def test_item_popularity_helper() -> None:
     counts = item_popularity_from_interactions([1, 1, 2, 3, 3, 3], smooth=0.0)
     assert counts == {1: 2.0, 2: 1.0, 3: 3.0}
+
+
+def test_counterfactual_ips_and_snips() -> None:
+    rewards = [1.0, 0.0, 1.0]
+    target = [0.5, 0.25, 0.25]
+    logging = [0.25, 0.25, 0.5]
+
+    assert ips_estimator(rewards, target, logging, clip=None) == pytest.approx(0.8333333333)
+    assert snips_estimator(rewards, target, logging, clip=None) == pytest.approx(0.7142857143)
 
 
 # ===========================================================================

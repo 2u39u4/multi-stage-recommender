@@ -13,6 +13,7 @@ services:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
       - NEOREC_MODEL_DIR=/app/artifacts
     volumes:
+      - ../data:/app/data:ro
       - ../artifacts:/app/artifacts:ro
     depends_on:
       - redis
@@ -23,7 +24,7 @@ services:
     image: redis:7-alpine
     container_name: neorec-redis
     ports:
-      - "6379:6379"
+      - "6380:6379"
     volumes:
       - redis-data:/data
     restart: unless-stopped
@@ -48,6 +49,11 @@ services:
       - MLFLOW_TRACKING_URI=http://mlflow:5000
     depends_on:
       - api
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
     restart: unless-stopped
     networks: [neorec]
 
@@ -67,6 +73,7 @@ services:
       - mlflow-data:/mlflow
     restart: unless-stopped
     networks: [neorec]
+    profiles: ["observability"]
 
   prometheus:
     image: prom/prometheus:v2.52.0
@@ -78,6 +85,7 @@ services:
       - prometheus-data:/prometheus
     restart: unless-stopped
     networks: [neorec]
+    profiles: ["observability"]
 
   grafana:
     image: grafana/grafana:10.4.2
@@ -92,6 +100,7 @@ services:
       - prometheus
     restart: unless-stopped
     networks: [neorec]
+    profiles: ["observability"]
 
 volumes:
   redis-data:

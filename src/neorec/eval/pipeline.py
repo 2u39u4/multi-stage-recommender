@@ -6,6 +6,8 @@ import logging
 
 from omegaconf import DictConfig
 
+from neorec.rerank.pipeline import run as run_rerank
+
 log = logging.getLogger(__name__)
 
 
@@ -22,4 +24,5 @@ def run(cfg: DictConfig) -> dict[str, float]:
     4. Log everything to MLflow under a single run.
     5. Dump a markdown table to ``experiments/results/end_to_end.md``.
     """
-    raise NotImplementedError  # TODO(W4)
+    log.info("Delegating full-funnel evaluation to the rerank orchestrator.")
+    return run_rerank(cfg)

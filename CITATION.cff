@@ -7,13 +7,12 @@ abstract: >
   MMR re-ranking, and a containerized FastAPI + Streamlit deployment.
 type: software
 authors:
-  - family-names: "Your Last Name"
-    given-names: "Your First Name"
-    email: "you@example.com"
-repository-code: "https://github.com/your-handle/neorec"
+  - family-names: "Zhao"
+    given-names: "Junye"
+repository-code: "https://github.com/2u39u4/multi-stage-recommender"
 license: MIT
 version: "0.1.0"
-date-released: "2026-04-22"
+date-released: "2026-05-18"
 keywords:
   - recommender-system
   - deep-learning

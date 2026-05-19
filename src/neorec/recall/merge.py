@@ -161,7 +161,9 @@ def merge(
     if strategy == "norm_weighted":
         return merge_norm_weighted(results, **kwargs)  # type: ignore[arg-type]
     if strategy == "learned":
-        raise NotImplementedError("learned fusion is reserved for the W4 ablation")
+        raise ValueError(
+            "learned fusion is not shipped in this release; use 'rrf' or 'norm_weighted'"
+        )
     raise ValueError(f"Unknown merge strategy: {strategy!r}")
 
 
