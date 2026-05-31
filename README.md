@@ -3,6 +3,7 @@
 > Portfolio-ready recommender system on MovieLens: multi-channel recall →
 > DeepFM/DIN ranking → MMR/rules re-ranking → FastAPI + Streamlit serving.
 
+[![CI](https://github.com/2u39u4/multi-stage-recommender/actions/workflows/ci.yaml/badge.svg)](https://github.com/2u39u4/multi-stage-recommender/actions/workflows/ci.yaml)
 [![Python](https://img.shields.io/badge/python-3.10-blue.svg)]()
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.2-EE4C2C.svg)]()
 [![FAISS](https://img.shields.io/badge/FAISS-1.8-006699.svg)]()
