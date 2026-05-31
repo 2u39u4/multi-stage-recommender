@@ -221,7 +221,7 @@ story is the wide activity spread — p10 ≤ 17 positives, p90 ≥ 225 — whic
 motivates having *both* head-friendly (popularity) and tail-friendly
 (content-based) recall channels.
 
-![User activity](experiments/results/eda/02_user_activity.png)
+![User activity](experiments/results/eda/02_user_activity.png?v=2)
 
 **(3) Item popularity is strongly Zipf (slope ≈ −1.57).**
 The top-20% of items capture 72.9% of all positives — a textbook long-tail.
