@@ -1,0 +1,4 @@
+# Re-attribute legacy Cursor co-author trailers to the project owner.
+# GitHub uses this for the Contributors sidebar and co-author chips without
+# rewriting history. See https://git-scm.com/docs/gitmailmap
+Junye Zhao <junyezhao9@gmail.com> Cursor <cursoragent@cursor.com>
